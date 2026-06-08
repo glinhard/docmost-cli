@@ -61,3 +61,47 @@ class TestAttachmentSearch:
         assert result.exit_code == 0
         assert "att-3" in result.output
         assert "logo.svg" in result.output
+
+
+class TestAttachmentUpload:
+    def test_uploads_file(self, tmp_config, tmp_path, httpx_mock) -> None:
+        image_file = tmp_path / "diagram.png"
+        image_file.write_bytes(b"fake-png-bytes")
+
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/files/upload",
+            json={"id": "att-new", "fileName": "diagram.png", "type": "image/png"},
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "attachment",
+                "upload",
+                "page-1",
+                "--file",
+                str(image_file),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "att-new" in result.output
+        assert "/api/files/att-new/diagram.png" in result.output
+
+    def test_missing_file_errors(self, tmp_config, tmp_path) -> None:
+        missing_file = tmp_path / "missing.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "attachment",
+                "upload",
+                "page-1",
+                "--file",
+                str(missing_file),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "File not found" in result.output

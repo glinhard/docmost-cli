@@ -242,6 +242,8 @@ docmost-cli search <query>                        # Full-text search
 ```
 docmost-cli attachment search <query>             # Search attachments
   --space <space-slug>
+docmost-cli attachment upload <page-id>           # Upload a file to a page
+  --file <path>
 ```
 
 ### 4.8 `docmost-cli workspace`
@@ -425,6 +427,8 @@ POST /search              → {query, spaceId?, type?, limit?, cursor?}
 ```
 POST /attachments/search  → {query, spaceId?}
 GET  /attachments/...     → file download
+POST /files/upload        → multipart {file, pageId} (undocumented; used by the
+                            web editor for inline images/attachments)
 ```
 
 **Workspace:**
@@ -695,7 +699,7 @@ def print_error(message: str, exit_code: int = 1) -> NoReturn:
 - [x] `docmost-cli page duplicate` / `page copy`
 - [x] `docmost-cli page children` (with `--json`) / `page history` (with `--json`)
 - [x] `docmost-cli page export` / `page import`
-- [x] `docmost-cli attachment search`
+- [x] `docmost-cli attachment search` / `attachment upload`
 - [x] `docmost-cli workspace` / `docmost-cli user`
 - [x] Tree view (`--tree`) for page listing
 - [x] Pagination auto-follow for full listings
@@ -846,8 +850,11 @@ These items need investigation during implementation. Update this section as ans
       the REST endpoint is sufficient or if WebSocket is required for content changes.
       *Current approach*: REST-first; WebSocket deferred to future phase.
 - [ ] **Rate limiting**: Does Docmost implement rate limiting? If so, what are the limits?
-- [ ] **Attachment upload**: Is there an API endpoint for uploading attachments, or
-      is it only available through the editor UI?
+- [x] **Attachment upload**: *Resolved*: `POST /files/upload` (multipart, fields
+      `file` + `pageId`) is the undocumented endpoint the web editor uses for
+      inline images/attachments. Returns an attachment record (`id`, `fileName`,
+      ...); the page-embeddable URL is `/api/files/{id}/{fileName}`. Wired up as
+      `docmost-cli attachment upload <page-id> --file <path>`.
 - [x] **Space slug vs ID**: Some endpoints accept slug, others require ID.
       *Resolved*: `resolve_space_id()` helper in `api/spaces.py` calls
       `POST /spaces/info` with `{spaceSlug: slug}` and returns the ID.

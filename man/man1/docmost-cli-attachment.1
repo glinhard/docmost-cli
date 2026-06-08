@@ -9,6 +9,11 @@ docmost\-cli\-attachment \- attachment operations for Docmost wiki
 .RB [ \-\-space
 .IR slug ]
 .RB [ \-\-json ]
+.PP
+.B docmost\-cli attachment upload
+.I page\-id
+.B \-\-file
+.I path
 .SH DESCRIPTION
 Commands for working with file attachments in a Docmost wiki.
 .SH SUBCOMMANDS
@@ -25,6 +30,19 @@ Restrict search to attachments in a specific space.
 Output as a JSON array instead of a Rich table.
 .PP
 Table columns: id, fileName, type.
+.SS upload
+Upload a file (e.g. an image) and attach it to a page.
+.PP
+.I page\-id
+is the UUID of the page to attach the file to.
+.TP
+.BI \-\-file " path"
+Path to the local file to upload.
+.PP
+Prints the new attachment ID to stdout and a confirmation message with the
+page\-embeddable URL (\fI/api/files/{id}/{fileName}\fR) to stderr. Embed the
+result in the page's Markdown, e.g.
+.IR "![alt text](/api/files/<id>/<filename>)" .
 .SH EXAMPLES
 Search for attachments:
 .PP
@@ -39,6 +57,15 @@ Search within a space:
 .RS 4
 .EX
 $ docmost\-cli attachment search "logo" \-\-space design
+.EE
+.RE
+.PP
+Upload an image to a page:
+.PP
+.RS 4
+.EX
+$ docmost\-cli attachment upload 019e997e\-e14c\-7de7\-a35c\-15089aaa306f \\
+    \-\-file ./diagram.png
 .EE
 .RE
 .SH EXIT STATUS

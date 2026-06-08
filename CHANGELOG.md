@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `attachment upload <page-id> --file <path>` command: upload a file (e.g.
+  an image) and attach it to a page via the undocumented `POST /files/upload`
+  endpoint (the same one the web editor uses for inline images/attachments).
+  Prints the new attachment ID and the page-embeddable URL
+  (`/api/files/{id}/{fileName}`) for embedding in Markdown.
+
 ## 0.4.0 (2026-03-22)
 
 - Add `sync pull` command: download all pages from a space to local Markdown files with YAML frontmatter
