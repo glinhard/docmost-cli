@@ -1,6 +1,7 @@
 """Attachment API methods."""
 
 from typing import Any
+from urllib.parse import quote
 
 from docmost_cli.api.client import DocmostClient
 from docmost_cli.api.pagination import build_body
@@ -77,4 +78,4 @@ def build_attachment_url(attachment: dict[str, Any]) -> str:
     Returns:
         A relative URL of the form "/api/files/{id}/{fileName}".
     """
-    return f"/api/files/{attachment['id']}/{attachment['fileName']}"
+    return f"/api/files/{attachment['id']}/{quote(attachment['fileName'])}"
