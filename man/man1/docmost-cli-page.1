@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-page(1)
 .\" Source: SPECIFICATION.md section 4.2, src/docmost_cli/cli/page.py
-.TH DOCMOST\-CLI\-PAGE 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI\-PAGE 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli\-page \- page operations for Docmost wiki
 .SH SYNOPSIS
@@ -107,20 +107,43 @@ List pages in a space.
 identifies the space whose pages to list.
 .TP
 .BI \-\-limit " N"
-Maximum number of results to return.
-Default: 50.
+Maximum total number of results across all pages.
+When omitted, every page is retrieved.
+.TP
+.BI \-\-page\-size " N"
+Results per request, 1\-100.
+Default: 100 (the server maximum).
 .TP
 .BI \-\-cursor " cursor"
-Pagination cursor from a previous response.
-When omitted, pagination is followed automatically until all pages
-are retrieved (up to
-.BR \-\-limit ).
+Fetch a single page of results starting at this cursor.
+Implies
+.BR \-\-no\-follow .
+.TP
+.B \-\-no\-follow
+Fetch a single page of results instead of following pagination.
 .TP
 .B \-\-tree
 Display pages as an indented tree showing the parent\-child hierarchy.
+Cannot be combined with the pagination options.
 .TP
 .B \-\-json
 Output as a JSON array instead of a Rich table.
+With
+.BR \-\-tree ,
+outputs the nested tree as JSON.
+.TP
+.B \-\-envelope
+With
+.BR \-\-json ,
+wrap the results as
+.B {"items": [...], "meta": {...}}
+so the caller can read
+.B hasNextPage
+and
+.BR nextCursor .
+Without it,
+.B \-\-json
+emits a bare array.
 .SS get
 Get page content as Markdown.
 .PP
@@ -200,6 +223,19 @@ Read new content from a file.
 .TP
 .B \-\-stdin
 Read new content from standard input.
+.TP
+.B \-\-append
+Append the new content to the end of the page instead of replacing it.
+.TP
+.B \-\-prepend
+Insert the new content at the start of the page instead of replacing it.
+.PP
+Content updates are applied in place through
+.BR "POST /api/pages/update" ,
+which Docmost routes to its collaboration gateway server\-side.
+The page keeps its ID, slug, history, comments and inbound links.
+Requires Docmost v0.71 or newer; older servers silently ignore the content,
+which the CLI detects and reports as an error rather than a false success.
 .SS delete
 Delete a page.
 .PP
@@ -218,13 +254,28 @@ At least one of the options below must be provided.
 .TP
 .BI \-\-parent " id"
 New parent page UUID.
-Omit to move the page to the root level.
 .TP
 .BI \-\-space " slug"
 Move the page to a different space.
 .TP
-.BI \-\-position " N"
-Position among siblings (zero\-based index).
+.B \-\-root
+Move the page to the space root, clearing its parent.
+.TP
+.BI \-\-position " placement"
+Placement among siblings:
+.BR first ,
+.BR last ,
+or an explicit 5\-12 character ordering key.
+Default:
+.BR first .
+.PP
+Docmost requires an ordering key on every move, so
+.B first
+and
+.B last
+read the destination's existing children and compute a fractional index
+before the first or after the last of them.
+An explicit key is sent verbatim with no sibling lookup.
 .SS duplicate
 Duplicate a page within the same space.
 .PP
@@ -248,9 +299,30 @@ List child pages of a parent page.
 .PP
 .I page\-id
 is the UUID of the parent page.
+.PP
+Pagination is followed automatically.
+The server returns only 20 children per request by default, so a parent with
+more than that still yields every child.
+.TP
+.BI \-\-limit " N"
+Maximum total number of children across all pages.
+.TP
+.BI \-\-page\-size " N"
+Results per request, 1\-100. Default: 100.
+.TP
+.BI \-\-cursor " cursor"
+Fetch a single page of results starting at this cursor.
+.TP
+.B \-\-no\-follow
+Fetch a single page of results.
 .TP
 .B \-\-json
 Output as a JSON array instead of a Rich table.
+.TP
+.B \-\-envelope
+With
+.BR \-\-json ,
+include pagination metadata.
 .SS history
 Show page version history.
 .PP
@@ -258,10 +330,24 @@ Show page version history.
 is the UUID of the page.
 .TP
 .BI \-\-limit " N"
-Maximum number of history entries to return.
+Maximum total number of history entries across all pages.
+.TP
+.BI \-\-page\-size " N"
+Results per request, 1\-100. Default: 100.
+.TP
+.BI \-\-cursor " cursor"
+Fetch a single page of results starting at this cursor.
+.TP
+.B \-\-no\-follow
+Fetch a single page of results.
 .TP
 .B \-\-json
 Output as a JSON array instead of a Rich table.
+.TP
+.B \-\-envelope
+With
+.BR \-\-json ,
+include pagination metadata.
 .SS export
 Export page content to a file.
 .PP

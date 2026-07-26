@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
+from docmost_cli.api.pagination import build_body
 
 __all__ = [
     "create_comment",
@@ -42,17 +43,26 @@ def _wrap_text_as_prosemirror(text: str) -> dict[str, Any]:
     return {"type": "doc", "content": paragraphs}
 
 
-def list_comments(client: DocmostClient, page_id: str) -> dict[str, Any]:
-    """List all comments on a page.
+def list_comments(
+    client: DocmostClient,
+    page_id: str,
+    *,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    """List comments on a page (one page of results).
 
     Args:
         client: Authenticated Docmost client.
         page_id: Page UUID.
+        limit: Max results per request.
+        cursor: Pagination cursor.
 
     Returns:
         Raw API response dict.
     """
-    return client.post("/comments", json={"pageId": page_id})
+    body = build_body({"pageId": page_id}, limit=limit, cursor=cursor)
+    return client.post("/comments", json=body)
 
 
 def create_comment(

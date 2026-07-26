@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from docmost_cli.api.position import is_valid_position
 from docmost_cli.cli.main import app
 from docmost_cli.cli.page import _resolve_content
 
@@ -82,6 +83,10 @@ class TestPageCreate:
             json={"id": "child-page"},
         )
         httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/sidebar-pages",
+            json={"data": {"items": [{"id": "sib-1", "position": "a1"}], "meta": {}}},
+        )
+        httpx_mock.add_response(
             url="https://docs.example.com/api/pages/move",
             json={"id": "child-page"},
         )
@@ -103,14 +108,15 @@ class TestPageCreate:
         )
         assert result.exit_code == 0
         assert "child-page" in result.output
-        # Verify move was called with position parameter
+        # Verify move was called with a valid, sibling-aware position
         import json as json_mod
 
         move_requests = [r for r in httpx_mock.get_requests() if "/pages/move" in str(r.url)]
         assert len(move_requests) == 1
         move_body = json_mod.loads(move_requests[0].content)
         assert move_body["parentPageId"] == "parent-1"
-        assert move_body["position"] == "aaaaa"
+        assert is_valid_position(move_body["position"])
+        assert move_body["position"] < "a1"  # placed first
 
     def test_create_empty_page(self, tmp_config, httpx_mock) -> None:
         httpx_mock.add_response(
@@ -208,11 +214,36 @@ class TestPageDelete:
 
 
 class TestPageMove:
+    @staticmethod
+    def _mock_page_info(httpx_mock, **overrides) -> None:
+        payload = {"id": "page-1", "title": "My Page", "spaceId": "space-1"}
+        payload.update(overrides)
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/info", json={"data": payload}
+        )
+
+    @staticmethod
+    def _mock_siblings(httpx_mock, items=None) -> None:
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/sidebar-pages",
+            json={"data": {"items": items or [], "meta": {"hasNextPage": False}}},
+        )
+
+    @staticmethod
+    def _move_body(httpx_mock) -> dict:
+        import json as json_mod
+
+        requests = [r for r in httpx_mock.get_requests() if "/pages/move" in str(r.url)]
+        assert len(requests) == 1
+        return json_mod.loads(requests[0].content)
+
     def test_move_to_space(self, tmp_config, httpx_mock) -> None:
+        self._mock_page_info(httpx_mock)
         httpx_mock.add_response(
             url="https://docs.example.com/api/spaces",
             json={"data": {"items": [{"id": "space-2", "slug": "staging", "name": "Staging"}]}},
         )
+        self._mock_siblings(httpx_mock)
         httpx_mock.add_response(
             url="https://docs.example.com/api/pages/move",
             json={"id": "page-1"},
@@ -223,6 +254,111 @@ class TestPageMove:
         )
         assert result.exit_code == 0
         assert "page-1" in result.output
+
+    def test_move_to_parent_sends_valid_position(self, tmp_config, httpx_mock) -> None:
+        """Omitting --position must not produce the HTTP 400 the server used to send."""
+        self._mock_page_info(httpx_mock)
+        self._mock_siblings(httpx_mock, [{"id": "sib-1", "position": "a1AAA"}])
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/move", json={"id": "page-1"}
+        )
+        result = runner.invoke(
+            app,
+            ["--config", str(tmp_config), "page", "move", "page-1", "--parent", "parent-1"],
+        )
+        assert result.exit_code == 0
+        body = self._move_body(httpx_mock)
+        assert body["parentPageId"] == "parent-1"
+        assert is_valid_position(body["position"])
+        assert body["position"] < "a1AAA"
+
+    def test_position_last_sorts_after_siblings(self, tmp_config, httpx_mock) -> None:
+        self._mock_page_info(httpx_mock)
+        self._mock_siblings(
+            httpx_mock,
+            [{"id": "sib-1", "position": "a1AAA"}, {"id": "sib-2", "position": "a2AAA"}],
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/move", json={"id": "page-1"}
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "page",
+                "move",
+                "page-1",
+                "--parent",
+                "parent-1",
+                "--position",
+                "last",
+            ],
+        )
+        assert result.exit_code == 0
+        assert self._move_body(httpx_mock)["position"] > "a2AAA"
+
+    def test_raw_position_passes_through(self, tmp_config, httpx_mock) -> None:
+        """An explicit key must be sent verbatim, with no sibling lookup."""
+        self._mock_page_info(httpx_mock)
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/move", json={"id": "page-1"}
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "page",
+                "move",
+                "page-1",
+                "--parent",
+                "parent-1",
+                "--position",
+                "a0V8f",
+            ],
+        )
+        assert result.exit_code == 0
+        assert self._move_body(httpx_mock)["position"] == "a0V8f"
+        urls = [str(r.url) for r in httpx_mock.get_requests()]
+        assert not any("sidebar-pages" in url for url in urls)
+
+    def test_invalid_position_exits_2(self, tmp_config, httpx_mock) -> None:
+        self._mock_page_info(httpx_mock)
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "page",
+                "move",
+                "page-1",
+                "--parent",
+                "parent-1",
+                "--position",
+                "abc",
+            ],
+        )
+        assert result.exit_code == 2
+
+    def test_root_moves_to_space_root(self, tmp_config, httpx_mock) -> None:
+        self._mock_page_info(httpx_mock, parentPageId="old-parent")
+        self._mock_siblings(httpx_mock, [{"id": "r1", "position": "a1AAA"}])
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/move", json={"id": "page-1"}
+        )
+        result = runner.invoke(
+            app, ["--config", str(tmp_config), "page", "move", "page-1", "--root"]
+        )
+        assert result.exit_code == 0
+        assert "parentPageId" not in self._move_body(httpx_mock)
+
+    def test_root_with_parent_conflicts(self, tmp_config) -> None:
+        result = runner.invoke(
+            app,
+            ["--config", str(tmp_config), "page", "move", "page-1", "--root", "--parent", "p1"],
+        )
+        assert result.exit_code == 2
 
     def test_move_no_flags(self, tmp_config) -> None:
         result = runner.invoke(app, ["--config", str(tmp_config), "page", "move", "page-1"])

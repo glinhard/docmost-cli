@@ -93,11 +93,22 @@ def sync_push_cmd(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show changes without executing"),
     delete: bool = typer.Option(False, "--delete", help="Delete server pages not found locally"),
+    allow_recreate: bool = typer.Option(
+        False,
+        "--allow-recreate",
+        help=(
+            "On servers older than Docmost v0.71, replace pages by delete+recreate "
+            "instead of aborting (ASSIGNS NEW PAGE IDs and breaks links and history)"
+        ),
+    ),
 ) -> None:
     """Upload local changes to Docmost server.
 
     Requires a prior 'sync pull' to establish the manifest.
     Use --dry-run to preview changes before applying.
+
+    Content is updated in place on Docmost v0.71 and newer, so page IDs are
+    preserved. Older servers abort unless --allow-recreate is given.
 
     See also: sync status (preview changes), sync pull (download from server).
     """
@@ -119,4 +130,12 @@ def sync_push_cmd(
         if pre_diff.has_changes:
             typer.confirm("Push changes?", abort=True)
 
-    push_space(client, space_slug, target, dry_run=dry_run, delete=delete, diff=pre_diff)
+    push_space(
+        client,
+        space_slug,
+        target,
+        dry_run=dry_run,
+        delete=delete,
+        allow_recreate=allow_recreate,
+        diff=pre_diff,
+    )

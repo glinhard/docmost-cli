@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docmost-cli"
-version = "0.4.0"
+dynamic = ["version"]
 description = "CLI tool for managing Docmost wiki instances"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -54,6 +54,9 @@ Homepage = "https://github.com/glinhard/docmost-cli"
 Repository = "https://github.com/glinhard/docmost-cli"
 Issues = "https://github.com/glinhard/docmost-cli/issues"
 Changelog = "https://github.com/glinhard/docmost-cli/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "src/docmost_cli/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docmost_cli"]

@@ -1,4 +1,4 @@
-"""Config management subcommands: init, show, set, test."""
+"""Config management subcommands: init, show, set, test, logout."""
 
 import sys
 
@@ -8,6 +8,7 @@ from rich.table import Table
 
 from docmost_cli.api.auth import AuthError
 from docmost_cli.config.store import (
+    get_cache_dir,
     get_config_path,
     read_config,
     set_config_value,
@@ -83,6 +84,7 @@ def config_show() -> None:
             "email": state.settings.email or "",
             "password": state.settings.password or "",
             "profile": state.settings.profile,
+            "no_session_cache": "true" if state.settings.no_session_cache else "false",
         }
     else:
         values = {"profile": "default"}
@@ -109,13 +111,42 @@ def config_set(
     profile: str = typer.Option("default", "--profile", "-p", help="Profile to update"),
 ) -> None:
     """Set a configuration value."""
-    valid_keys = {"url", "api_key", "email", "password"}
+    valid_keys = {"url", "api_key", "email", "password", "no_session_cache"}
+    bool_keys = {"no_session_cache"}
     if key not in valid_keys:
         print_error(f"Unknown config key '{key}'. Valid keys: {', '.join(sorted(valid_keys))}")
 
+    stored: str | bool = value
+    if key in bool_keys:
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            stored = True
+        elif lowered in {"false", "0", "no", "off"}:
+            stored = False
+        else:
+            print_error(
+                f"Invalid boolean value '{value}' for '{key}'. Use 'true' or 'false'.",
+                exit_code=2,
+            )
+
     path = get_config_path(_get_effective_config_path())
-    set_config_value(key, value, profile, path)
+    set_config_value(key, stored, profile, path)
     _console.print(f"Set [bold]{key}[/bold] in profile '{profile}'")
+
+
+@config_app.command("logout")
+def config_logout() -> None:
+    """Delete the cached session token.
+
+    --no-session-cache deliberately does not remove an existing cache file;
+    use this to purge one.
+    """
+    cache = get_cache_dir() / "session.json"
+    if cache.exists():
+        cache.unlink()
+        _console.print(f"Removed cached session token: {cache}")
+    else:
+        _console.print("No cached session token to remove.")
 
 
 @config_app.command("test")

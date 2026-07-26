@@ -5,9 +5,19 @@ from typing import Any
 import typer
 
 from docmost_cli.api.comments import create_comment, list_comments, update_comment
-from docmost_cli.api.pagination import extract_id, extract_items
+from docmost_cli.api.pagination import extract_id
+from docmost_cli.cli._list_opts import (
+    cursor_option,
+    emit_list,
+    envelope_option,
+    fetch_list,
+    json_option,
+    limit_option,
+    no_follow_option,
+    page_size_option,
+)
 from docmost_cli.cli.main import get_client
-from docmost_cli.output.formatter import print_result, print_table
+from docmost_cli.output.formatter import print_result
 
 __all__ = ["comment_app"]
 
@@ -42,22 +52,34 @@ def _extract_text_from_prosemirror(doc: dict[str, Any]) -> str:
 @comment_app.command("list")
 def comment_list_cmd(
     page_id: str = typer.Argument(help="Page ID to list comments for"),
-    json_mode: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    limit: int | None = limit_option(),
+    page_size: int | None = page_size_option(),
+    cursor: str | None = cursor_option(),
+    no_follow: bool = no_follow_option(),
+    json_mode: bool = json_option(),
+    envelope: bool = envelope_option(),
 ) -> None:
     """List comments on a page."""
     client = get_client()
-    result = list_comments(client, page_id)
-    items = extract_items(result)
+    result = fetch_list(
+        list_comments,
+        limit=limit,
+        page_size=page_size,
+        cursor=cursor,
+        no_follow=no_follow,
+        client=client,
+        page_id=page_id,
+    )
 
     # For table display, extract text from ProseMirror content
     if not json_mode:
-        for item in items:
+        for item in result.items:
             content = item.get("content")
             if isinstance(content, dict):
                 item["content"] = _extract_text_from_prosemirror(content)
 
     columns = ["id", "content", "creatorId", "createdAt"]
-    print_table(items, columns, json_mode=json_mode)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
 
 
 @comment_app.command("create")

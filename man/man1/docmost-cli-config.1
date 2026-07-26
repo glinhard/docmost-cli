@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-config(1)
 .\" Source: SPECIFICATION.md section 4.1, src/docmost_cli/cli/config_cmd.py
-.TH DOCMOST\-CLI\-CONFIG 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI\-CONFIG 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli\-config \- manage docmost\-cli configuration
 .SH SYNOPSIS
@@ -16,6 +16,8 @@ docmost\-cli\-config \- manage docmost\-cli configuration
 .IR name ]
 .br
 .B docmost\-cli config test
+.br
+.B docmost\-cli config logout
 .SH DESCRIPTION
 Commands for managing
 .B docmost\-cli
@@ -56,10 +58,19 @@ Valid keys:
 .BR url ,
 .BR api_key ,
 .BR email ,
-.BR password .
+.BR password ,
+.BR no_session_cache .
 .PP
 .I value
 is the value to assign.
+.B no_session_cache
+is a boolean and accepts
+.BR true / false ,
+.BR 1 / 0 ,
+.BR yes / no ,
+or
+.BR on / off ;
+anything else is a usage error.
 .TP
 .BI \-\-profile " name"
 Profile to update.
@@ -72,6 +83,14 @@ instance.
 Attempts to connect to the Docmost API and authenticate using the
 current configuration.
 Reports success or a detailed error message.
+.SS logout
+Delete the cached session token at
+.IR ~/.cache/docmost\-cli/session.json .
+.PP
+The global
+.B \-\-no\-session\-cache
+flag deliberately does not remove an existing cache file, so use this to
+purge one.
 .SH EXAMPLES
 Run the interactive setup wizard:
 .PP

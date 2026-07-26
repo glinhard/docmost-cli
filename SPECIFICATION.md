@@ -102,12 +102,25 @@ DOCMOST_PROFILE=staging
 ### 3.4 CLI Global Options
 
 ```
---profile, -p    Config profile name (default: "default")
---url            Override Docmost URL
---api-key        Override API key
---yes, -y        Skip confirmation prompts
---verbose, -v    Debug logging (HTTP requests/responses)
---config         Path to config file
+--version, -V       Print the version and exit
+--profile, -p       Config profile name (default: "default")
+--url               Override Docmost URL
+--api-key           Override API key
+--yes, -y           Skip confirmation prompts
+--verbose, -v       Debug logging (HTTP requests/responses)
+--config            Path to config file
+--no-session-cache  Keep the session JWT in memory; never touch the cache file
+```
+
+Every list command shares the same pagination flags:
+
+```
+--limit N        Max total results across all pages (default: all)
+--page-size N    Results per request, 1-100 (default: 100, the server maximum)
+--cursor <c>     Fetch a single page starting at this cursor
+--no-follow      Fetch a single page instead of following pagination
+--json           Output as a JSON array
+--envelope       With --json, emit {"items": [...], "meta": {...}} instead
 ```
 
 ---
@@ -140,10 +153,13 @@ docmost-cli config test                   # Test connectivity and auth
 
 ```
 docmost-cli page list <space-slug>                # List pages in a space
-  --limit N                                   # Max results (default: 50)
-  --cursor <cursor>                           # Pagination cursor
+  --limit N                                   # Max total results (default: all)
+  --page-size N                               # Results per request, 1-100
+  --cursor <cursor>                           # Fetch a single page from this cursor
+  --no-follow                                 # Fetch a single page
   --tree                                      # Show as indented tree
   --json                                      # Output as JSON array
+  --envelope                                  # With --json, include pagination meta
 
 docmost-cli page get <page-id>                    # Get page content as Markdown to stdout
   --raw                                       # Output ProseMirror JSON instead
@@ -158,20 +174,28 @@ docmost-cli page create <space-slug>              # Create a new page
   --icon <emoji>                              # Page icon
   # stdout: page ID | stderr: human-friendly confirmation
 
-docmost-cli page update <page-id>                 # Update existing page
+docmost-cli page update <page-id>                 # Update existing page (in place)
   --title "New Title"                         # Update title
+  --icon <emoji>                              # Update icon
   --content "New markdown"                    # Replace content (inline)
   --file path/to/content.md                   # Replace content (from file)
   --stdin                                     # Replace content (from stdin)
+  --append                                    # Append instead of replacing
+  --prepend                                   # Insert at the start instead of replacing
   # stdout: page ID | stderr: human-friendly confirmation
+  # Page ID, slug, history, comments and inbound links are preserved.
 
 docmost-cli page delete <page-id>                 # Delete a page (requires confirmation)
   # stdout: deleted page ID | stderr: confirmation message
 
 docmost-cli page move <page-id>                   # Move a page
-  --parent <page-id>                          # New parent (omit for root)
+  --parent <page-id>                          # New parent page ID
   --space <space-slug>                        # Move to different space
-  --position <int>                            # Position among siblings
+  --root                                      # Move to the space root
+  --position first|last|<key>                 # Placement among siblings (default: first)
+  # Docmost requires an ordering key on every move. "first"/"last" read the
+  # destination's children and compute a fractional index; an explicit
+  # 5-12 character key is sent verbatim.
 
 docmost-cli page duplicate <page-id>              # Duplicate a page
 
@@ -179,11 +203,13 @@ docmost-cli page copy <page-id>                   # Copy to different space
   --space <space-slug>                        # Target space
 
 docmost-cli page children <page-id>               # List child pages
-  --json                                      # Output as JSON array
+  --limit N --page-size N --cursor <c> --no-follow
+  --json --envelope
+  # Server default page size is 20; pagination is followed automatically.
 
 docmost-cli page history <page-id>                # Show page version history
-  --limit N
-  --json                                      # Output as JSON array
+  --limit N --page-size N --cursor <c> --no-follow
+  --json --envelope
 
 docmost-cli page export <page-id>                 # Export page
   --format md|html                            # Output format (default: md)
@@ -364,7 +390,13 @@ All endpoints are `POST` unless noted. Base path: `/api/`.
 
 > **Edition note**: All endpoints below are available on both Community and Enterprise
 > editions (the frontend uses them), except those explicitly marked "Enterprise only".
+> Feature availability is a function of the *server version*, not the edition.
 > The CLI should attempt all endpoints and degrade gracefully if unavailable.
+>
+> **Validation note**: Docmost's global `ValidationPipe` uses `whitelist: true`
+> without `forbidNonWhitelisted`, so a server too old to know a body field
+> silently **strips** it and returns HTTP 200. Any feature gated on a newer
+> server needs a positive confirmation signal, not just a 2xx.
 
 **Authentication:**
 ```
@@ -376,28 +408,50 @@ POST /auth/logout
 ```
 POST /pages/info          → {pageId} → page metadata
 POST /pages/create        → {title, spaceId, parentPageId?, icon?, content?}
-POST /pages/update        → {pageId, title?, icon?}
+POST /pages/update        → {pageId, title?, icon?,
+                             content?, format?: json|markdown|html,
+                             operation?: replace|append|prepend}
 POST /pages/delete        → {pageId}
-POST /pages/move          → {pageId, parentPageId?, position?, spaceId?}
+POST /pages/move          → {pageId, position (REQUIRED, 5-12 chars), parentPageId?, spaceId?}
 POST /pages/duplicate     → {pageId}
 POST /pages/copy          → {pageId, spaceId}
-POST /pages/sidebar-pages → {spaceId} → tree structure
+POST /pages/sidebar-pages → {spaceId?, pageId?, limit?, cursor?} → tree structure
 POST /pages/recent        → {spaceId, limit?, cursor?}
-POST /pages/children      → {pageId, limit?, cursor?}
 POST /pages/history       → {pageId, limit?, cursor?}
 POST /pages/import        → multipart: file (md/html), spaceId, parentPageId?
 POST /pages/export         → {pageId, format: "md"|"html"}
 ```
 
-**Page Content (Enterprise only, v0.70+):**
+> `POST /pages/move` requires `position` — `MovePageDto` declares it
+> `@IsString @MinLength(5) @MaxLength(12)`. Omitting it is an HTTP 400.
+> It is a base62 fractional index; see `src/docmost_cli/api/position.py`.
+
+**Page content updates (Docmost v0.71+, both editions):**
+```
+POST /pages/update        → {pageId, content, format: "markdown", operation: "replace"}
+```
+> Content sent to `/pages/update` is applied **server-side through Docmost's
+> collaboration gateway** (`PageService.update()` → `updatePageContent()` →
+> `collaborationGateway.handleYjsEvent('updatePageContent', 'page.<id>', …)`).
+> The page keeps its ID, slug, history, comments and inbound links, and the CLI
+> needs no WebSocket or Yjs client of its own.
+>
+> There is **no `/pages/content/update` endpoint in Docmost** — earlier versions
+> of this CLI called it and got a 404, which was misread as an edition
+> restriction.
+>
+> Detecting an unsupported server: send `format: "markdown"` and inspect the
+> returned `content`. A supporting server converts it with `jsonToMarkdown`, so
+> it comes back as a **string**; a server that stripped the fields returns
+> ProseMirror JSON (an **object**) or nothing.
+
+**Page content read (Enterprise only, v0.70+):**
 ```
 POST /pages/content       → {pageId} → ProseMirror JSON content
-POST /pages/content/update → {pageId, content (markdown/html), format}
 ```
-> These endpoints may not be available on Community edition. The CLI attempts
-> them and falls back with a clear error suggesting delete+recreate workflow.
-> On Community edition, content updates may require WebSocket (Hocuspocus/Y.js)
-> which is deferred to a future phase.
+> Not available on Community edition; the CLI falls back to `/pages/info`,
+> which can also convert content server-side via
+> `{includeContent: true, format: "markdown"}`.
 
 **Spaces:**
 ```
@@ -410,7 +464,7 @@ POST /spaces/delete       → {spaceId}
 
 **Comments:**
 ```
-POST /comments/list       → {pageId}
+POST /comments/list       → {pageId, limit?, cursor?}
 POST /comments/create     → {pageId, content}
 POST /comments/update     → {commentId, content}
 POST /comments/delete     → {commentId}
@@ -423,7 +477,7 @@ POST /search              → {query, spaceId?, type?, limit?, cursor?}
 
 **Attachments:**
 ```
-POST /attachments/search  → {query, spaceId?}
+POST /attachments/search  → {query, spaceId?, limit?, cursor?}
 GET  /attachments/...     → file download
 ```
 
@@ -445,23 +499,38 @@ POST /users/me            → current user info
 
 ### 5.3 Pagination
 
-Docmost uses cursor-based pagination (as of v0.25+):
+Docmost uses cursor-based pagination (as of v0.25+). The server caps `limit` at
+**100** and rejects anything larger with HTTP 400. Default page sizes vary by
+endpoint (20 for `/pages/sidebar-pages`).
 
 ```json
 // Request
-{"spaceId": "...", "limit": 50, "cursor": "eyJpZCI6Ii..."}
+{"spaceId": "...", "limit": 100, "cursor": "eyJpZCI6Ii..."}
 
 // Response
 {
   "data": {
     "items": [...],
-    "cursor": "next-cursor-value-or-null"
+    "meta": {
+      "limit": 100,
+      "hasNextPage": true,
+      "hasPrevPage": false,
+      "nextCursor": "eyJpZCI6Ii...",
+      "prevCursor": null
+    }
   }
 }
 ```
 
-The CLI should handle pagination transparently for listing commands (iterate until cursor is null)
-unless the user sets an explicit `--limit`.
+The next cursor lives at **`data.meta.nextCursor`** — not `data.cursor`.
+
+List commands follow pagination transparently until `hasNextPage` is false.
+`--limit` caps the total across pages; `--cursor` or `--no-follow` fetches a
+single page. `--json` stays a bare array; `--envelope` wraps it as
+`{"items": [...], "meta": {...}}` so a caller can drive the cursor itself.
+
+`paginate_all`/`paginate_iter` guard against a server that ignores `cursor` by
+stopping when a cursor or a page repeats, rather than looping forever.
 
 ### 5.4 Error Handling
 
@@ -706,16 +775,39 @@ def print_error(message: str, exit_code: int = 1) -> NoReturn:
 - [x] Tab completion (typer built-in)
 - [x] `--verbose` HTTP debug logging
 - [x] PyPI packaging and distribution
-- [ ] Man page / docs generation (deferred)
+- [x] Man pages in `man/man1/` (one hub + one per command group)
 
 ### Phase 5: Sync
 - [x] `sync/manifest.py` — manifest load/save, content hashing, filename sanitization
 - [x] `sync/frontmatter.py` — YAML frontmatter parse/serialize (no PyYAML dependency)
 - [x] `sync/pull.py` — pull algorithm (tree → flatten → fetch content → write files)
-- [x] `sync/push.py` — push algorithm (diff → create/update/move, edition-aware)
+- [x] `sync/push.py` — push algorithm (diff → create/update/move)
 - [x] `sync/diff.py` — change detection (new, modified, moved, deleted)
 - [x] `cli/sync_cmd.py` — `sync pull`, `sync push`, `sync status` commands
 - [x] Tests for all sync modules (96 sync tests + 9 CLI tests)
+
+### Phase 6: Community gap fixes (0.5.0)
+- [x] `models/common.py` — `PaginationMeta` / `PaginatedResult` pydantic models
+- [x] Fix `get_cursor()` to read `data.meta.nextCursor` (it read `data.cursor`,
+      so it always returned `None` and auto-follow never ran)
+- [x] `paginate_all` / `paginate_iter` wired into every list command, with
+      repeated-cursor and repeated-page guards
+- [x] `--limit` / `--page-size` / `--cursor` / `--no-follow` / `--envelope` on
+      all eight list commands
+- [x] `page children` pagination (server default page size is 20)
+- [x] Paginate the internal callers: `_find_space_by_slug` (slug resolution
+      failed past page 1), `build_page_tree` / `_fill_children` (`sync pull`
+      fetched an incomplete tree)
+- [x] `api/position.py` — base62 fractional indexing with jitter, so
+      `page move` always sends the required 5-12 character `position`
+- [x] `page move --position first|last|<key>` and `--root`
+- [x] In-place content updates via `POST /pages/update`, with a capability
+      signal that detects a server silently ignoring the content
+- [x] `page update --append` / `--prepend`
+- [x] `sync push --allow-recreate` — delete+recreate is opt-in, never silent
+- [x] `sync push` saves the manifest even when a phase aborts
+- [x] `--version` / `-V` and a `version` subcommand; single-source version
+- [x] `--no-session-cache`, `DOCMOST_NO_SESSION_CACHE`, `config logout`
 
 ---
 
@@ -834,17 +926,21 @@ These items need investigation during implementation. Update this section as ans
 > degrades gracefully with clear error messages if unavailable. This avoids blocking
 > implementation on answers that can only come from live testing.
 
-- [ ] **Content update endpoint**: Does `POST /pages/content/update` accept raw
-      Markdown on Community edition, or is it Enterprise-only? If Community-only
-      has no content update, the import-delete-recreate workaround may be needed.
-      *Current approach*: Try REST endpoint; on failure, show edition-aware error.
+- [x] **Content update endpoint**: Does `POST /pages/content/update` accept raw
+      Markdown on Community edition, or is it Enterprise-only?
+      *Resolved (0.5.0)*: Neither — **that endpoint does not exist in Docmost**,
+      which is why it 404s. Content updates go through `POST /pages/update` with
+      `{content, format: "markdown", operation: "replace"}`, available on both
+      editions from v0.71. Verified against the v0.95.0 server source.
 - [ ] **OpenAPI spec**: Is there a downloadable OpenAPI/Swagger JSON at
       `https://instance/api-docs/openapi.json` or similar? This would allow
       auto-generating type stubs.
-- [ ] **WebSocket for content updates**: The MrMartiniMo MCP server uses WebSocket
-      (Hocuspocus/Y.js collaboration protocol) for content updates. Determine if
-      the REST endpoint is sufficient or if WebSocket is required for content changes.
-      *Current approach*: REST-first; WebSocket deferred to future phase.
+- [x] **WebSocket for content updates**: Is a Hocuspocus/Y.js WebSocket client
+      required for content changes?
+      *Resolved (0.5.0)*: No. `PageService.update()` calls `updatePageContent()`,
+      which dispatches `collaborationGateway.handleYjsEvent('updatePageContent',
+      'page.<id>', …)` — **the server performs the Yjs write**. REST is
+      sufficient; no WS client, no CRDT dependency.
 - [ ] **Rate limiting**: Does Docmost implement rate limiting? If so, what are the limits?
 - [ ] **Attachment upload**: Is there an API endpoint for uploading attachments, or
       is it only available through the editor UI?

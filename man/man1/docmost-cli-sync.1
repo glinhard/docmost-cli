@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-sync(1)
 .\" Source: SPECIFICATION.md section 4.10, src/docmost_cli/cli/sync_cmd.py
-.TH DOCMOST\-CLI\-SYNC 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI\-SYNC 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli\-sync \- synchronize Docmost pages with local Markdown files
 .SH SYNOPSIS
@@ -63,16 +63,21 @@ icon: null
 Page content here...
 .EE
 .RE
-.SS Edition\-aware content updates
-.TP
-.B Enterprise edition
-Direct content update via the REST API.
-The page ID is preserved.
-.TP
-.B Community edition
-Safe create\-then\-delete workflow: a new page is created and verified
-before the old page is removed.
-This ensures no data loss even if the operation is interrupted.
+.SS Content updates
+Content is updated in place through
+.BR "POST /api/pages/update" ,
+which Docmost routes to its collaboration gateway server\-side.
+Page IDs, slugs, history, comments and inbound links are all preserved.
+This works on Community and Enterprise alike, from Docmost v0.71.
+.PP
+Servers older than that silently ignore the content field.
+.B docmost\-cli
+detects this and aborts rather than reporting a false success.
+Pass
+.B \-\-allow\-recreate
+to fall back to a create\-then\-delete replacement instead; the new page is
+created and verified before the old one is removed, but the page ID and slug
+change, and history, comments and inbound links to that page are lost.
 .SH SUBCOMMANDS
 .SS pull
 Download all pages from a space to local Markdown files.
@@ -124,6 +129,12 @@ Show what changes would be applied without executing them.
 Delete server pages that are not found locally.
 Without this flag, pages deleted from the local directory are
 left untouched on the server.
+.TP
+.B \-\-allow\-recreate
+On servers older than Docmost v0.71, replace pages by delete+recreate
+instead of aborting.
+This assigns new page IDs and breaks inbound links, comments and page
+history; a warning naming the affected page count is printed first.
 .SS status
 Show changes between local files and the last\-pulled state.
 .PP

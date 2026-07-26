@@ -13,6 +13,7 @@ __all__ = [
     "print_key_value",
     "print_result",
     "print_table",
+    "print_warning",
 ]
 
 _err_console = Console(stderr=True)
@@ -54,11 +55,28 @@ def print_key_value(data: dict[str, Any], key_style: str = "bold") -> None:
     console.print(table)
 
 
-def print_table(rows: list[dict[str, Any]], columns: list[str], json_mode: bool = False) -> None:
-    """Print as rich table or JSON array depending on mode."""
+def print_table(
+    rows: list[dict[str, Any]],
+    columns: list[str],
+    json_mode: bool = False,
+    *,
+    meta: dict[str, Any] | None = None,
+) -> None:
+    """Print as rich table or JSON depending on mode.
+
+    Args:
+        rows: Item dicts to render.
+        columns: Column whitelist, applied to both table and JSON output.
+        json_mode: Emit JSON instead of a Rich table.
+        meta: Pagination metadata. When None (the default), JSON output is a
+            bare array — the documented contract. When provided, JSON output
+            becomes ``{"items": [...], "meta": {...}}`` and table output gains
+            a stderr footer with the next cursor.
+    """
     if json_mode:
         filtered = [{col: row.get(col) for col in columns} for row in rows]
-        sys.stdout.write(json.dumps(filtered, indent=2, default=str) + "\n")
+        payload: Any = filtered if meta is None else {"items": filtered, "meta": meta}
+        sys.stdout.write(json.dumps(payload, indent=2, default=str) + "\n")
         return
 
     from rich.table import Table
@@ -72,11 +90,19 @@ def print_table(rows: list[dict[str, Any]], columns: list[str], json_mode: bool 
     console = Console()
     console.print(table)
 
+    if meta is not None and meta.get("hasNextPage"):
+        _err_console.print(f"More results available. Next cursor: {meta.get('nextCursor')}")
+
 
 def print_result(resource_id: str, message: str) -> None:
     """Print resource ID to stdout, confirmation to stderr."""
     sys.stdout.write(resource_id + "\n")
     _err_console.print(message)
+
+
+def print_warning(message: str) -> None:
+    """Print a warning to stderr without exiting."""
+    _err_console.print(f"[yellow]Warning:[/yellow] {message}")
 
 
 def print_error(message: str, exit_code: int = 1) -> NoReturn:

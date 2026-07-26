@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli(1)
 .\" Source: SPECIFICATION.md, src/docmost_cli/cli/main.py
-.TH DOCMOST\-CLI 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli \- manage Docmost wiki instances from the terminal
 .SH SYNOPSIS
@@ -48,6 +48,14 @@ and
 are used.
 .SH GLOBAL OPTIONS
 .TP
+.BR \-V ", " \-\-version
+Print the version and exit.
+The
+.B version
+subcommand prints the same string; with
+.B \-\-verbose
+it also reports the Python version and platform.
+.TP
 .BR \-p ", " \-\-profile " " \fIname\fR
 Configuration profile to use.
 Default:
@@ -68,6 +76,16 @@ Prints HTTP requests and responses to stderr.
 .TP
 .BI \-\-config " path"
 Path to an alternative configuration file.
+.TP
+.B \-\-no\-session\-cache
+Never read from or write to the session token cache.
+The JWT obtained by session authentication stays in memory for the lifetime
+of the process.
+Use this where credential policy forbids additional on\-disk token caches.
+Has no effect with API key authentication.
+This flag does not delete an existing cache file; use
+.B docmost\-cli config logout
+for that.
 .SH COMMANDS
 Each command group is documented in its own man page.
 Run
@@ -136,6 +154,17 @@ Sync push \-\-dry\-run	Action plan	nothing
 Sync ops (pull, push)	nothing	Progress + summary
 Errors	nothing	Error message
 .TE
+.PP
+List commands follow pagination automatically and emit a bare JSON array with
+.BR \-\-json .
+Add
+.B \-\-envelope
+to get
+.B {"items": [...], "meta": {...}}
+instead, which carries
+.B hasNextPage
+and
+.BR nextCursor .
 .SH CONFIGURATION
 Configuration is stored in a TOML file supporting multiple named profiles.
 .SS File format
@@ -180,6 +209,13 @@ Login password (Community edition).
 .B DOCMOST_PROFILE
 Active profile name.
 .TP
+.B DOCMOST_NO_SESSION_CACHE
+Set to
+.BR 1 ", " true ", " yes " or " on
+to keep the session JWT in memory and never read or write the session cache
+file. Equivalent to
+.BR \-\-no\-session\-cache .
+.TP
 .B XDG_CONFIG_HOME
 Override configuration directory
 (default:
@@ -195,7 +231,12 @@ Override cache directory
 Main configuration file (TOML format with profile sections).
 .TP
 .I ~/.cache/docmost\-cli/session.json
-Cached JWT session token (Community edition auth).
+Cached JWT session token (session authentication).
+Not created or read when
+.B \-\-no\-session\-cache
+is in effect.
+Remove it with
+.BR "docmost\-cli config logout" .
 .SH EXIT STATUS
 .TP
 .B 0
