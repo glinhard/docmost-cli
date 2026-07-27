@@ -118,7 +118,10 @@ jobs:
           print(f"{wheel.name}: {len(pages)} man pages, licence metadata OK")
           PY
 
-      - uses: actions/upload-artifact@v4
+      # upload@v7 and download@v8 are a matched pair: v7 uploads files directly
+      # instead of zipping them, and v8 is the major that stopped trying to
+      # un-zip a download that was never a zip. Bump them together.
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -137,7 +140,7 @@ jobs:
     permissions:
       id-token: write # required for Trusted Publishing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -166,7 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
