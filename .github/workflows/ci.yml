@@ -1,5 +1,10 @@
 name: CI
 
+# Uses only first-party actions on conservative major pins, and installs with
+# pip rather than uv. The project prefers uv locally (see CLAUDE.md), but this
+# runner could not resolve `astral-sh/setup-uv`, and pip is the documented
+# fallback — a CI file that reliably runs beats a marginally faster one.
+
 on:
   push:
     branches: [main]
@@ -22,23 +27,23 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v9
+      - uses: actions/setup-python@v5
         with:
-          enable-cache: true
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: |
-          uv venv --python ${{ matrix.python-version }}
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install
-        run: uv pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
       - name: Verify the interpreter matches the matrix
-        # Without this, a broken venv step would silently run every matrix entry
-        # on the runner's default Python and report three passes for one version.
+        # Without this, a misconfigured setup step would silently run every
+        # matrix entry on the runner's default Python and report three passes
+        # for one version.
         run: |
           python - <<'PY'
           import sys
@@ -55,25 +60,24 @@ jobs:
     name: lint and type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v9
+      - uses: actions/setup-python@v5
         with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: |
-          uv venv --python 3.11
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install
-        run: uv pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
       - name: Ruff lint
-        run: ruff check src/ tests/
+        run: python -m ruff check src/ tests/
 
       - name: Ruff format
-        run: ruff format --check src/ tests/
+        run: python -m ruff format --check src/ tests/
 
       # Runs once, not per matrix entry: pyproject pins mypy's
       # python_version = "3.11", so the result is interpreter-independent.
@@ -84,14 +88,16 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v9
+      - uses: actions/setup-python@v5
         with:
-          enable-cache: true
+          python-version: "3.11"
 
       - name: Build sdist and wheel
-        run: uv build
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
 
       - name: Verify the built version matches __version__
         # The version is dynamic: hatch reads it out of src/docmost_cli/__init__.py.
@@ -99,7 +105,7 @@ jobs:
         # version rather than failing.
         run: |
           python - <<'PY'
-          import pathlib, re, sys
+          import pathlib, re
 
           source = pathlib.Path("src/docmost_cli/__init__.py").read_text()
           match = re.search(r'__version__ = "([^"]+)"', source)
