@@ -1,0 +1,199 @@
+name: Release
+
+# Publishes to PyPI and cuts a GitHub Release when a v* tag is pushed.
+#
+# Authentication is PyPI Trusted Publishing (OIDC) — no API token is stored in
+# this repository. One-time setup on pypi.org, under the project's
+# "Publishing" settings, add a trusted publisher:
+#
+#     Owner:            glinhard
+#     Repository:       docmost-cli
+#     Workflow name:    release.yml
+#     Environment:      pypi
+#
+# Dry runs: trigger this workflow manually (Actions -> Release -> Run workflow)
+# to exercise the whole chain — version guard, build, artifact checks, and
+# action resolution — without uploading anything anywhere.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Build and verify only; do not publish"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m pip install -e ".[dev]"
+
+      - name: Full test suite
+        # The tag is the last chance to catch a regression before it is
+        # published immutably: PyPI does not allow re-uploading a version.
+        run: python -m pytest tests/ -q
+
+      - name: Verify the tag matches __version__
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python - <<'PY'
+          import os, pathlib, re
+
+          source = pathlib.Path("src/docmost_cli/__init__.py").read_text()
+          version = re.search(r'__version__ = "([^"]+)"', source).group(1)
+          tag = os.environ["GITHUB_REF_NAME"]
+          assert tag == f"v{version}", f"tag {tag} does not match __version__ {version}"
+          print(f"tag {tag} matches __version__ {version}")
+          PY
+
+      - name: Verify this version is not already on PyPI
+        # PyPI rejects a duplicate upload anyway; failing here gives a clearer
+        # message than a 400 from the publish step.
+        run: |
+          python - <<'PY'
+          import json, pathlib, re, urllib.request
+
+          source = pathlib.Path("src/docmost_cli/__init__.py").read_text()
+          version = re.search(r'__version__ = "([^"]+)"', source).group(1)
+          try:
+              with urllib.request.urlopen(
+                  "https://pypi.org/pypi/docmost-cli/json", timeout=30
+              ) as response:
+                  released = set(json.load(response)["releases"])
+          except Exception as exc:  # noqa: BLE001 - never block a release on this
+              print(f"could not reach PyPI ({exc}); skipping the duplicate check")
+          else:
+              assert version not in released, (
+                  f"{version} is already on PyPI; bump __version__ before tagging"
+              )
+              print(f"{version} is not yet on PyPI (has {sorted(released)})")
+          PY
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check the distributions
+        run: python -m twine check dist/*
+
+      - name: Verify the wheel contents
+        run: |
+          python - <<'PY'
+          import pathlib, re, zipfile
+
+          source = pathlib.Path("src/docmost_cli/__init__.py").read_text()
+          version = re.search(r'__version__ = "([^"]+)"', source).group(1)
+
+          wheel = next(iter(pathlib.Path("dist").glob("*.whl")))
+          assert f"-{version}-" in wheel.name, f"built {wheel.name}, expected {version}"
+
+          names = zipfile.ZipFile(wheel).namelist()
+          pages = [n for n in names if n.endswith(".1") and "share/man/man1" in n]
+          assert len(pages) == 10, f"expected 10 man pages, found {len(pages)}"
+
+          metadata = next(n for n in names if n.endswith("METADATA"))
+          text = zipfile.ZipFile(wheel).read(metadata).decode()
+          assert "License-Expression: AGPL-3.0-or-later" in text, "missing licence expression"
+          assert "Classifier: License ::" not in text, (
+              "deprecated License :: classifier is back; PEP 639 replaces it "
+              "with the license expression"
+          )
+          print(f"{wheel.name}: {len(pages)} man pages, licence metadata OK")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    # The job itself also runs on a manual dispatch, so a dry run resolves and
+    # downloads every action here — including the third-party publish action.
+    # That matters: `astral-sh/setup-uv` turned out not to resolve on these
+    # runners at all, and a release is the worst moment to discover that.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/docmost-cli/
+    permissions:
+      id-token: write # required for Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        # Uploading is gated on the ref being a tag, not on the dry-run input.
+        # A dispatch always runs against a branch, so no manual invocation can
+        # publish, whatever inputs it is given.
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Dry run summary
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          echo "Dry run: actions resolved and artifacts built, nothing published."
+          echo "Push a v* tag to publish for real."
+          ls -l dist/
+
+  github-release:
+    name: GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write # required to create the release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract this version's CHANGELOG section
+        run: |
+          python - <<'PY'
+          import os, pathlib, re
+
+          version = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          changelog = pathlib.Path("CHANGELOG.md").read_text()
+          # Everything from this version's heading up to the next "## " heading.
+          match = re.search(
+              rf"^## {re.escape(version)}.*?$(.*?)(?=^## )",
+              changelog,
+              re.MULTILINE | re.DOTALL,
+          )
+          body = match.group(1).strip() if match else f"See CHANGELOG.md for {version}."
+          pathlib.Path("release-notes.md").write_text(body + "\n")
+          print(body[:500])
+          PY
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            dist/*
