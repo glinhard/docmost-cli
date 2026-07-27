@@ -14,6 +14,7 @@ from docmost_cli.cli._list_opts import (
     emit_list,
     envelope_option,
     fetch_list,
+    fields_option,
     json_option,
     limit_option,
     no_follow_option,
@@ -24,7 +25,7 @@ from docmost_cli.output.formatter import print_error, print_result
 
 __all__ = ["space_app"]
 
-space_app = typer.Typer(name="space", help="Space operations.")
+space_app: typer.Typer = typer.Typer(name="space", help="Space operations.")
 
 
 @space_app.command("list")
@@ -35,6 +36,7 @@ def space_list_cmd(
     no_follow: bool = no_follow_option(),
     json_mode: bool = json_option(),
     envelope: bool = envelope_option(),
+    fields: str | None = fields_option(),
 ) -> None:
     """List all spaces."""
     client = get_client()
@@ -47,7 +49,7 @@ def space_list_cmd(
         client=client,
     )
     columns = ["id", "name", "slug", "description"]
-    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope, fields=fields)
 
 
 @space_app.command("create")

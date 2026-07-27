@@ -1,5 +1,7 @@
 """Tests for comment CLI commands."""
 
+import json
+
 from typer.testing import CliRunner
 
 from docmost_cli.cli.main import app
@@ -61,6 +63,46 @@ class TestCommentList:
         )
         assert result.exit_code == 0
         assert "c1" in result.output
+
+    @staticmethod
+    def _mock_prosemirror(httpx_mock) -> None:
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/comments",
+            json={
+                "data": [
+                    {
+                        "id": "c1",
+                        "content": {
+                            "type": "doc",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [{"type": "text", "text": "Looks good"}],
+                                }
+                            ],
+                        },
+                        "creatorId": "u1",
+                        "createdAt": "2026-03-22",
+                    },
+                ]
+            },
+        )
+
+    def test_json_keeps_raw_prosemirror(self, tmp_config, httpx_mock) -> None:
+        """--json stays lossless: the flattening is a table-only convenience."""
+        self._mock_prosemirror(httpx_mock)
+        result = runner.invoke(
+            app, ["--config", str(tmp_config), "comment", "list", "page-1", "--json"]
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload[0]["content"]["type"] == "doc"
+
+    def test_table_flattens_prosemirror(self, tmp_config, httpx_mock) -> None:
+        self._mock_prosemirror(httpx_mock)
+        result = runner.invoke(app, ["--config", str(tmp_config), "comment", "list", "page-1"])
+        assert result.exit_code == 0
+        assert "Looks good" in result.output
 
 
 class TestCommentCreate:

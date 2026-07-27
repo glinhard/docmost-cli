@@ -1,5 +1,6 @@
 """Tests for page CLI commands."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -376,15 +377,27 @@ class TestPageList:
             json={
                 "data": {
                     "items": [
-                        {"id": "p1", "title": "Page One", "updatedAt": "2026-03-20"},
+                        {
+                            "id": "p1",
+                            "title": "Page One",
+                            "updatedAt": "2026-03-20",
+                            # Outside the table's column list:
+                            "slugId": "abc123",
+                            "spaceId": "s1",
+                            "isLocked": False,
+                        },
                     ]
                 }
             },
         )
         result = runner.invoke(app, ["--config", str(tmp_config), "page", "list", "eng", "--json"])
         assert result.exit_code == 0
-        assert "Page One" in result.output
-        assert "p1" in result.output
+        payload = json.loads(result.output)
+        assert payload[0]["title"] == "Page One"
+        # Lossless: fields outside the table columns survive.
+        assert payload[0]["slugId"] == "abc123"
+        assert payload[0]["spaceId"] == "s1"
+        assert payload[0]["isLocked"] is False
 
     def test_list_table(self, tmp_config, httpx_mock) -> None:
         httpx_mock.add_response(
@@ -696,3 +709,71 @@ class TestPageListTree:
         assert result.exit_code == 0
         assert "Root Page" in result.output
         assert "Child Page" in result.output
+
+    @staticmethod
+    def _mock_tree(httpx_mock) -> None:
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/spaces",
+            json={"data": {"items": [{"id": "s1", "slug": "eng", "name": "Eng"}]}},
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/sidebar-pages",
+            json={
+                "data": {
+                    "items": [
+                        {
+                            "id": "p1",
+                            "title": "Root Page",
+                            "position": "a1AAA",
+                            "children": [
+                                {
+                                    "id": "p2",
+                                    "title": "Child Page",
+                                    "position": "a2AAA",
+                                    "children": [],
+                                },
+                            ],
+                        },
+                    ]
+                }
+            },
+        )
+
+    def test_tree_json_fields_projects_and_keeps_children(self, tmp_config, httpx_mock) -> None:
+        self._mock_tree(httpx_mock)
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "page",
+                "list",
+                "eng",
+                "--tree",
+                "--json",
+                "--fields",
+                "id,title",
+            ],
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert list(payload[0]) == ["id", "title", "children"]
+        assert "position" not in payload[0]
+        # The projection recurses.
+        assert list(payload[0]["children"][0]) == ["id", "title", "children"]
+        assert payload[0]["children"][0]["title"] == "Child Page"
+
+    def test_tree_fields_without_json_exits_2(self, tmp_config, httpx_mock) -> None:
+        result = runner.invoke(
+            app,
+            ["--config", str(tmp_config), "page", "list", "eng", "--tree", "--fields", "id"],
+        )
+        assert result.exit_code == 2
+
+    def test_tree_rejects_page_size(self, tmp_config, httpx_mock) -> None:
+        """The guard's message named --page-size but never checked it before 0.6.0."""
+        result = runner.invoke(
+            app,
+            ["--config", str(tmp_config), "page", "list", "eng", "--tree", "--page-size", "5"],
+        )
+        assert result.exit_code == 2

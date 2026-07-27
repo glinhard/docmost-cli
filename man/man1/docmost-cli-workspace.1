@@ -1,10 +1,13 @@
 .\" Manual page for docmost-cli-workspace(1)
 .\" Source: SPECIFICATION.md section 4.7, src/docmost_cli/cli/workspace.py
-.TH DOCMOST\-CLI\-WORKSPACE 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI\-WORKSPACE 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli\-workspace \- Docmost workspace information
 .SH SYNOPSIS
 .B docmost\-cli workspace info
+.RB [ \-\-json ]
+.RB [ \-\-fields
+.IR a,b,c ]
 .br
 .B docmost\-cli workspace members
 .RB [ \-\-limit
@@ -19,6 +22,14 @@ and users.
 Show workspace details.
 .PP
 Displays key\-value pairs: name, id, description, memberCount, createdAt.
+.TP
+.B \-\-json
+Output the complete workspace object as JSON.
+The key\-value view shows a curated subset; this shows everything the server
+returned.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output, for both renderers.
 .SS members
 List workspace members.
 .TP
@@ -36,14 +47,25 @@ Fetch a single page of results starting at this cursor.
 Fetch a single page of results instead of following pagination.
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+Names are matched against the fields the server returned; an unknown name is a
+usage error listing what is available.
 .TP
 .B \-\-envelope
 With
 .BR \-\-json ,
 include pagination metadata.
 .PP
-Table columns: id, email, name, role.
+Default table columns: id, email, name, role.
+These affect the table only; \-\-json emits every field the server returns.
 .SH EXAMPLES
 Show workspace details:
 .PP

@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli(1)
 .\" Source: SPECIFICATION.md, src/docmost_cli/cli/main.py
-.TH DOCMOST\-CLI 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli \- manage Docmost wiki instances from the terminal
 .SH SYNOPSIS
@@ -147,7 +147,8 @@ Command type	stdout	stderr
 _
 Content (page get)	Raw Markdown	nothing
 Content + meta (page get \-\-meta)	YAML frontmatter + Markdown	nothing
-Lists (page list, search, ...)	Rich table or JSON (\-\-json)	nothing
+Lists (page list, search, ...)	Rich table (curated columns) or complete JSON (\-\-json)	nothing
+Single item (user me, workspace info)	Key\-value table or JSON (\-\-json)	nothing
 Writes (page create, delete, ...)	Resource ID only	Confirmation message
 Sync status	Change summary	nothing
 Sync push \-\-dry\-run	Action plan	nothing
@@ -165,6 +166,14 @@ instead, which carries
 .B hasNextPage
 and
 .BR nextCursor .
+.PP
+With
+.BR \-\-json ,
+each element is the complete object the server returned; the table's columns
+are a display choice and do not narrow the JSON. Use
+.B \-\-fields
+to project the output to a comma\-separated field list, which also replaces the
+table's columns.
 .SH CONFIGURATION
 Configuration is stored in a TOML file supporting multiple named profiles.
 .SS File format
@@ -268,6 +277,7 @@ List pages in a space as JSON and filter with jq:
 .RS 4
 .EX
 $ docmost\-cli page list engineering \-\-json | jq \(aq.[].title\(aq
+$ docmost\-cli page list engineering \-\-json \-\-fields id,title,updatedAt
 .EE
 .RE
 .PP

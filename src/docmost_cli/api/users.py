@@ -3,6 +3,7 @@
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
+from docmost_cli.api.pagination import unwrap_data
 
 __all__ = [
     "get_current_user",
@@ -19,7 +20,6 @@ def get_current_user(client: DocmostClient) -> dict[str, Any]:
         Unwrapped user info dict.
     """
     result = client.post("/users/me", json={})
-    data = result.get("data", result)
-    if "user" in data and isinstance(data["user"], dict):
-        return data["user"]
-    return data
+    data = unwrap_data(result)
+    user = data.get("user")
+    return user if isinstance(user, dict) else data

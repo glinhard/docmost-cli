@@ -4,9 +4,12 @@ Handles all Docmost node types and marks, converting ProseMirror
 document trees into GitHub-Flavored Markdown.
 """
 
+from collections.abc import Callable
 from typing import Any
 
 __all__ = ["convert_to_markdown"]
+
+_NodeHandler = Callable[[dict[str, Any]], str]
 
 
 class ProseMirrorConverter:
@@ -36,7 +39,7 @@ class ProseMirrorConverter:
     def _walk_node(self, node: dict[str, Any]) -> str:
         """Dispatch to the handler for a node's type."""
         node_type = node.get("type", "")
-        handler = getattr(self, f"_node_{node_type}", None)
+        handler: _NodeHandler | None = getattr(self, f"_node_{node_type}", None)
         if handler:
             return handler(node)
         # Unknown node: try to extract content recursively
@@ -59,7 +62,12 @@ class ProseMirrorConverter:
         return text + "\n\n"
 
     def _node_heading(self, node: dict[str, Any]) -> str:
-        level = node.get("attrs", {}).get("level", 1)
+        attrs = node.get("attrs")
+        raw_level = attrs.get("level", 1) if isinstance(attrs, dict) else 1
+        try:
+            level = max(1, min(6, int(raw_level)))
+        except (TypeError, ValueError):
+            level = 1
         text = self._render_inline(node.get("content", []))
         return "#" * level + " " + text + "\n\n"
 

@@ -86,6 +86,10 @@ config/  → standalone                      (no dependencies except pydantic)
 - **Page positions**: `POST /pages/move` requires a 5-12 char base62 fractional
   index. Use `api/position.py`'s `generate_key_between` via
   `resolve_position()` — never hardcode a key
+- **Output projection**: `--json` never filters; the `columns` list is a display
+  choice for the Rich table only. `--fields` is the one thing that projects, and
+  it drives the table columns too. Go through `cli/_list_opts.py`'s
+  `emit_list`/`emit_item`, never `print_table`/`print_json` directly
 
 ### Output Strategy (no global `--json` flag)
 
@@ -96,8 +100,11 @@ Each command category uses the format that fits its data shape:
 |---|---|---|---|
 | **Content** (`page get`) | Raw Markdown | nothing | `docmost-cli page get abc123 > page.md` |
 | **Content + meta** (`page get --meta`) | YAML frontmatter + Markdown | nothing | Parseable by any frontmatter tool |
-| **Lists** (`page list`, `search`, ...) | Rich table (default) or JSON array (`--json`) | nothing | `docmost-cli page list eng --json \| jq` |
+| **Lists** (`page list`, `search`, ...) | Rich table (curated columns) or JSON array of **complete** objects (`--json`) | nothing | `docmost-cli page list eng --json \| jq` |
+| **Lists, projected** (`--fields a,b,c`) | Only those fields, in both renderers | nothing | `docmost-cli page list eng --fields id,title` |
 | **Lists + pagination meta** (`--json --envelope`) | `{"items": [...], "meta": {...}}` | nothing | `... --no-follow --json --envelope \| jq .meta` |
+| **Single item** (`workspace info`, `user me`) | Key-value table, or the complete object with `--json` | nothing | `docmost-cli user me --json \| jq .role` |
+| **Config** (`config show`) | Table, or masked JSON with `--json` | nothing | secrets stay masked in both |
 | **Writes** (`page create`, `delete`, ...) | Resource ID only | Confirmation message | `ID=$(docmost-cli page create ...)` |
 | **Sync status** (`sync status`) | Change summary | nothing | `docmost-cli sync status eng` |
 | **Sync push dry-run** (`sync push --dry-run`) | Action plan | nothing | `docmost-cli sync push eng --dry-run` |
@@ -106,7 +113,8 @@ Each command category uses the format that fits its data shape:
 
 This means:
 - `docmost-cli page get <id>` output is directly pipeable as Markdown
-- `docmost-cli page list <space> --json` is directly parseable by jq or Claude Code
+- `docmost-cli page list <space> --json` is directly parseable by jq or Claude Code,
+  and lossless — a new server field shows up without a CLI change
 - `PAGE_ID=$(docmost-cli page create ...)` captures just the ID with no extra parsing
 - Human-readable messages never pollute captured output
 

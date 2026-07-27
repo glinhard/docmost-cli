@@ -9,6 +9,7 @@ from docmost_cli.cli._list_opts import (
     emit_list,
     envelope_option,
     fetch_list,
+    fields_option,
     json_option,
     limit_option,
     no_follow_option,
@@ -18,7 +19,7 @@ from docmost_cli.cli.main import get_client
 
 __all__ = ["search_app"]
 
-search_app = typer.Typer(name="search", help="Search across the wiki.")
+search_app: typer.Typer = typer.Typer(name="search", help="Search across the wiki.")
 
 
 @search_app.command("query")
@@ -32,6 +33,7 @@ def search_cmd(
     no_follow: bool = no_follow_option(),
     json_mode: bool = json_option(),
     envelope: bool = envelope_option(),
+    fields: str | None = fields_option(),
 ) -> None:
     """Full-text search across the wiki."""
     client = get_client()
@@ -51,4 +53,4 @@ def search_cmd(
         result_type=type_filter,
     )
     columns = ["id", "title", "highlight"]
-    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope, fields=fields)

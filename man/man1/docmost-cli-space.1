@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-space(1)
 .\" Source: SPECIFICATION.md section 4.3, src/docmost_cli/cli/space.py
-.TH DOCMOST\-CLI\-SPACE 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI\-SPACE 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli\-space \- manage Docmost wiki spaces
 .SH SYNOPSIS
@@ -42,7 +42,17 @@ Fetch a single page of results starting at this cursor.
 Fetch a single page of results instead of following pagination.
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+Names are matched against the fields the server returned; an unknown name is a
+usage error listing what is available.
 .TP
 .B \-\-envelope
 With
@@ -54,7 +64,8 @@ so the caller can read
 and
 .BR nextCursor .
 .PP
-Table columns: id, name, slug, description.
+Default table columns: id, name, slug, description.
+These affect the table only; \-\-json emits every field the server returns.
 .SS create
 Create a new space.
 .TP

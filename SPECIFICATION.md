@@ -119,8 +119,9 @@ Every list command shares the same pagination flags:
 --page-size N    Results per request, 1-100 (default: 100, the server maximum)
 --cursor <c>     Fetch a single page starting at this cursor
 --no-follow      Fetch a single page instead of following pagination
---json           Output as a JSON array
+--json           Output as a JSON array of complete server objects
 --envelope       With --json, emit {"items": [...], "meta": {...}} instead
+--fields a,b,c   Project output to these fields; also replaces the table columns
 ```
 
 ---
@@ -526,8 +527,10 @@ The next cursor lives at **`data.meta.nextCursor`** — not `data.cursor`.
 
 List commands follow pagination transparently until `hasNextPage` is false.
 `--limit` caps the total across pages; `--cursor` or `--no-follow` fetches a
-single page. `--json` stays a bare array; `--envelope` wraps it as
-`{"items": [...], "meta": {...}}` so a caller can drive the cursor itself.
+single page. `--json` stays a bare array — of **complete server objects**, not
+just the table columns; `--envelope` wraps it as `{"items": [...], "meta": {...}}`
+so a caller can drive the cursor itself. `--fields a,b,c` projects the output and
+replaces the table's columns.
 
 `paginate_all`/`paginate_iter` guard against a server that ignores `cursor` by
 stopping when a cursor or a page repeats, rather than looping forever.
@@ -660,16 +663,42 @@ ID                                    Title              Updated
 019a2a69-yyyy-yyyy-yyyy-yyyyyyyyyyyy  API Reference      2026-03-18
 ```
 
-**`--json` flag** (per-command, not global): JSON array to stdout.
+The columns above are a curated display choice. They do **not** describe `--json`.
+
+**`--json` flag** (per-command, not global): JSON array to stdout, where each
+element is the **complete object the server returned**.
 Available on: `page list`, `page children`, `page history`, `space list`,
 `search`, `comment list`, `attachment search`, `workspace members`.
 
 ```json
 [
-  {"id": "019a2a69-xxxx", "title": "Getting Started", "updated": "2026-03-20T14:30:00Z"},
-  {"id": "019a2a69-yyyy", "title": "API Reference", "updated": "2026-03-18T10:00:00Z"}
+  {
+    "id": "019a2a69-xxxx", "slugId": "nGgQxxxx", "title": "Getting Started",
+    "icon": null, "position": "a0V8f", "parentPageId": null,
+    "creatorId": "019a1111-...", "lastUpdatedById": "019a1111-...",
+    "spaceId": "019a2222-...", "workspaceId": "019a3333-...",
+    "isLocked": false, "createdAt": "2026-03-01T09:00:00Z",
+    "updatedAt": "2026-03-20T14:30:00Z", "contributorIds": ["019a1111-..."]
+  }
 ]
 ```
+
+Page **content** is not part of the list payload (it is absent from Docmost's
+`baseFields`), so lossless listings stay small. Fetch a body with `page get <id>`.
+
+Narrow the output with `--fields`, which projects JSON and replaces the table's
+columns:
+
+```console
+$ docmost-cli page list eng --json --fields id,title,updatedAt
+```
+
+An unknown field name is a usage error (exit 2) listing the fields the server
+actually returned — a typo would otherwise yield a silent column of nulls.
+
+**Single-item commands** (`workspace info`, `user me`) also accept `--json`,
+emitting the complete object. `config show --json` emits the configuration with
+`api_key`/`password` masked exactly as the table does.
 
 ### 7.3 Write Commands (`page create`, `page update`, `page delete`, etc.)
 
@@ -718,9 +747,21 @@ def print_content(content: str) -> None:
 def print_content_with_meta(content: str, meta: dict) -> None:
     """Print YAML frontmatter + Markdown content to stdout."""
 
-# List output — table (default) or JSON (--json) to stdout
-def print_table(rows: list[dict], columns: list[str], json_mode: bool) -> None:
-    """Print as rich table or JSON array depending on mode."""
+# The single JSON writer — every --json path goes through it
+def print_json(payload: Any) -> None:
+    """Print a JSON document to stdout."""
+
+# List output — table (default) or JSON (--json) to stdout.
+# `columns` is a display choice: it never narrows JSON. `fields` projects both.
+def print_table(
+    rows: list[dict[str, Any]],
+    columns: list[str],
+    json_mode: bool = False,
+    *,
+    meta: dict[str, Any] | None = None,
+    fields: list[str] | None = None,
+) -> None:
+    """Print as a Rich table or JSON depending on mode."""
 
 # Write result — ID to stdout, message to stderr
 def print_result(resource_id: str, message: str) -> None:

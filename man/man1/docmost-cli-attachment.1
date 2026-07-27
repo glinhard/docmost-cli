@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-attachment(1)
 .\" Source: SPECIFICATION.md section 4.6, src/docmost_cli/cli/attachment.py
-.TH DOCMOST\-CLI\-ATTACHMENT 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI\-ATTACHMENT 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli\-attachment \- attachment operations for Docmost wiki
 .SH SYNOPSIS
@@ -35,7 +35,17 @@ Fetch a single page of results starting at this cursor.
 Fetch a single page of results instead of following pagination.
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+Names are matched against the fields the server returned; an unknown name is a
+usage error listing what is available.
 .TP
 .B \-\-envelope
 With
@@ -47,7 +57,8 @@ so the caller can read
 and
 .BR nextCursor .
 .PP
-Table columns: id, fileName, type.
+Default table columns: id, fileName, type.
+These affect the table only; \-\-json emits every field the server returns.
 .SH EXAMPLES
 Search for attachments:
 .PP

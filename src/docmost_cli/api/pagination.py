@@ -25,6 +25,7 @@ __all__ = [
     "get_meta",
     "paginate_all",
     "paginate_iter",
+    "unwrap_data",
 ]
 
 # Safety guard: stop after this many requests even if the server keeps
@@ -33,8 +34,33 @@ MAX_PAGES = 1000
 
 
 def extract_id(response: dict[str, Any]) -> str:
-    """Extract resource ID from API response, handling nested shapes."""
-    return response.get("id") or response.get("data", {}).get("id", "")
+    """Extract resource ID from API response, handling nested shapes.
+
+    Args:
+        response: Raw API response dict.
+
+    Returns:
+        The resource ID, or an empty string if the response carries none.
+    """
+    for candidate in (response, response.get("data")):
+        if isinstance(candidate, dict):
+            value = candidate.get("id")
+            if isinstance(value, str) and value:
+                return value
+    return ""
+
+
+def unwrap_data(response: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap Docmost's ``{success, status, data}`` envelope.
+
+    Args:
+        response: Raw API response dict.
+
+    Returns:
+        The ``data`` object when present, otherwise the response itself.
+    """
+    data = response.get("data")
+    return data if isinstance(data, dict) else response
 
 
 def build_body(required: dict[str, Any], **optional: Any) -> dict[str, Any]:
@@ -55,13 +81,24 @@ def extract_items(response: dict[str, Any]) -> list[dict[str, Any]]:
         response: Raw API response dict.
 
     Returns:
-        List of item dicts.
+        List of item dicts. Non-dict elements are dropped so the declared type
+        actually holds.
     """
-    if "data" in response and isinstance(response["data"], dict):
-        return response["data"].get("items", [])
-    if "data" in response and isinstance(response["data"], list):
-        return response["data"]
-    return response.get("items", [response] if "id" in response else [])
+    data = response.get("data")
+    if isinstance(data, dict):
+        return _as_items(data.get("items"))
+    if isinstance(data, list):
+        return _as_items(data)
+    if "items" in response:
+        return _as_items(response["items"])
+    return [response] if "id" in response else []
+
+
+def _as_items(value: Any) -> list[dict[str, Any]]:
+    """Coerce a raw JSON value into a list of item dicts."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def get_cursor(response: dict[str, Any]) -> str | None:

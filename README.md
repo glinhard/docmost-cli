@@ -67,7 +67,7 @@ docmost-cli page create <space-slug> --title "My Page" --file content.md
 | Command | Description |
 |---|---|
 | `docmost-cli config init` | Interactive configuration setup wizard |
-| `docmost-cli config show` | Show current configuration (secrets masked) |
+| `docmost-cli config show` | Show current configuration, secrets masked (`--json`) |
 | `docmost-cli config set <key> <value>` | Set a configuration value |
 | `docmost-cli config test` | Test connectivity and authentication |
 | `docmost-cli config logout` | Delete the cached session token |
@@ -84,18 +84,17 @@ docmost-cli page create <space-slug> --title "My Page" --file content.md
 | `docmost-cli page history <page-id>` | Show page version history (`--json`, pagination flags) |
 | `docmost-cli page export <page-id>` | Export page (`--format md\|html`, `--output`) |
 | `docmost-cli page import <space-slug>` | Import a Markdown file as a new page |
-| `docmost-cli space list` | List all spaces (`--detail`, `--json`) |
-| `docmost-cli space get <space-slug>` | Get space details |
+| `docmost-cli space list` | List all spaces (`--json`, pagination flags) |
 | `docmost-cli space create` | Create a new space (`--name`, `--slug`) |
 | `docmost-cli space update <space-slug>` | Update a space (`--name`, `--description`) |
 | `docmost-cli comment list <page-id>` | List comments on a page (`--json`) |
 | `docmost-cli comment create <page-id>` | Add a comment (`--content`) |
 | `docmost-cli comment update <comment-id>` | Edit a comment (`--content`) |
-| `docmost-cli search <query>` | Full-text search (`--space`, `--limit`, `--json`) |
+| `docmost-cli search query <query>` | Full-text search (`--space`, `--type`, `--json`, pagination flags) |
 | `docmost-cli attachment search <query>` | Search attachments (`--space`, `--json`, pagination flags) |
-| `docmost-cli workspace info` | Show workspace details |
+| `docmost-cli workspace info` | Show workspace details (`--json`, `--fields`) |
 | `docmost-cli workspace members` | List workspace members (`--json`) |
-| `docmost-cli user me` | Show authenticated user info |
+| `docmost-cli user me` | Show authenticated user info (`--json`, `--fields`) |
 | `docmost-cli sync pull <space-slug>` | Download a space to local Markdown files (`--dir`, `--force`) |
 | `docmost-cli sync push <space-slug>` | Upload local changes (`--dir`, `--dry-run`, `--delete`, `--allow-recreate`) |
 | `docmost-cli sync status <space-slug>` | Show local changes against the last pull (`--dir`) |
@@ -110,8 +109,9 @@ Every list command follows pagination automatically and shares the same flags:
 | `--page-size N` | Results per request, 1-100 (default: 100, the server maximum) |
 | `--cursor <c>` | Fetch a single page starting at this cursor |
 | `--no-follow` | Fetch a single page instead of following pagination |
-| `--json` | Output a bare JSON array |
+| `--json` | Output a bare JSON array of complete server objects |
 | `--envelope` | With `--json`, emit `{"items": [...], "meta": {...}}` instead |
+| `--fields a,b,c` | Output only these fields; also replaces the table's columns |
 
 ```bash
 # Every page in the space, not just the server's first page
@@ -119,6 +119,9 @@ docmost-cli page list eng --json | jq 'length'
 
 # Drive the cursor yourself
 docmost-cli page list eng --no-follow --json --envelope | jq -r .meta.nextCursor
+
+# --json is lossless; narrow it with --fields when you only need a few keys
+docmost-cli page list eng --json --fields id,title,updatedAt | jq -r '.[] | [.id,.title] | @tsv'
 ```
 
 ## Configuration

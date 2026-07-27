@@ -11,6 +11,7 @@ from docmost_cli.cli._list_opts import (
     emit_list,
     envelope_option,
     fetch_list,
+    fields_option,
     json_option,
     limit_option,
     no_follow_option,
@@ -21,7 +22,7 @@ from docmost_cli.output.formatter import print_result
 
 __all__ = ["comment_app"]
 
-comment_app = typer.Typer(name="comment", help="Comment operations.")
+comment_app: typer.Typer = typer.Typer(name="comment", help="Comment operations.")
 
 
 def _extract_text_from_prosemirror(doc: dict[str, Any]) -> str:
@@ -58,6 +59,7 @@ def comment_list_cmd(
     no_follow: bool = no_follow_option(),
     json_mode: bool = json_option(),
     envelope: bool = envelope_option(),
+    fields: str | None = fields_option(),
 ) -> None:
     """List comments on a page."""
     client = get_client()
@@ -79,7 +81,7 @@ def comment_list_cmd(
                 item["content"] = _extract_text_from_prosemirror(content)
 
     columns = ["id", "content", "creatorId", "createdAt"]
-    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope, fields=fields)
 
 
 @comment_app.command("create")

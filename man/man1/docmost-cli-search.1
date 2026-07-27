@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-search(1)
 .\" Source: SPECIFICATION.md section 4.5, src/docmost_cli/cli/search.py
-.TH DOCMOST\-CLI\-SEARCH 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI\-SEARCH 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli\-search \- full\-text search across a Docmost wiki
 .SH SYNOPSIS
@@ -48,14 +48,25 @@ or
 .BR attachment .
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+Names are matched against the fields the server returned; an unknown name is a
+usage error listing what is available.
 .TP
 .B \-\-envelope
 With
 .BR \-\-json ,
 include pagination metadata.
 .PP
-Table columns: id, title, highlight.
+Default table columns: id, title, highlight.
+These affect the table only; \-\-json emits every field the server returns.
 .SH EXAMPLES
 Search across the entire wiki:
 .PP

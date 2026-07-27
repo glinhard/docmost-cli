@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-config(1)
 .\" Source: SPECIFICATION.md section 4.1, src/docmost_cli/cli/config_cmd.py
-.TH DOCMOST\-CLI\-CONFIG 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI\-CONFIG 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli\-config \- manage docmost\-cli configuration
 .SH SYNOPSIS
@@ -9,6 +9,7 @@ docmost\-cli\-config \- manage docmost\-cli configuration
 .IR name ]
 .br
 .B docmost\-cli config show
+.RB [ \-\-json ]
 .br
 .B docmost\-cli config set
 .I key value
@@ -48,6 +49,16 @@ prompts.
 Show current configuration with secrets masked.
 .PP
 Displays a table of all settings for the active profile.
+.TP
+.B \-\-json
+Output the configuration as a JSON object.
+.B api_key
+and
+.B password
+are masked identically to the table \(em this command never emits a secret in
+full.
+.B no_session_cache
+is emitted as a JSON boolean.
 Sensitive values (API key, password) are partially redacted.
 .SS set
 Set a single configuration value.

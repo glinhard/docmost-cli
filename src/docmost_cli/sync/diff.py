@@ -47,7 +47,7 @@ class SyncDiff:
         return bool(self.new or self.modified or self.moved or self.deleted)
 
 
-def compute_diff(manifest: dict, dir_path: Path) -> SyncDiff:
+def compute_diff(manifest: dict[str, Any], dir_path: Path) -> SyncDiff:
     """Compute diff between local files and manifest.
 
     Algorithm:
