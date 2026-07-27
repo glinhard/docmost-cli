@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-page(1)
 .\" Source: SPECIFICATION.md section 4.2, src/docmost_cli/cli/page.py
-.TH DOCMOST\-CLI\-PAGE 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
+.TH DOCMOST\-CLI\-PAGE 1 "2026\-03\-22" "docmost\-cli 0.6.0" "User Commands"
 .SH NAME
 docmost\-cli\-page \- page operations for Docmost wiki
 .SH SYNOPSIS
@@ -12,6 +12,8 @@ docmost\-cli\-page \- page operations for Docmost wiki
 .IR cursor ]
 .RB [ \-\-tree ]
 .RB [ \-\-json ]
+.RB [ \-\-fields
+.IR a,b,c ]
 .br
 .B docmost\-cli page get
 .I page\-id
@@ -52,8 +54,9 @@ docmost\-cli\-page \- page operations for Docmost wiki
 .IR id ]
 .RB [ \-\-space
 .IR slug ]
+.RB [ \-\-root ]
 .RB [ \-\-position
-.IR N ]
+.IR first | last | key ]
 .br
 .B docmost\-cli page duplicate
 .I page\-id
@@ -65,6 +68,8 @@ docmost\-cli\-page \- page operations for Docmost wiki
 .B docmost\-cli page children
 .I page\-id
 .RB [ \-\-json ]
+.RB [ \-\-fields
+.IR a,b,c ]
 .br
 .B docmost\-cli page history
 .I page\-id
@@ -127,7 +132,9 @@ Display pages as an indented tree showing the parent\-child hierarchy.
 Cannot be combined with the pagination options.
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
 With
 .BR \-\-tree ,
 outputs the nested tree as JSON.
@@ -144,6 +151,21 @@ and
 Without it,
 .B \-\-json
 emits a bare array.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+An unknown name is a usage error listing what is available.
+With
+.BR \-\-tree ,
+.B \-\-fields
+projects every node and always keeps the nested
+.B children
+array; it requires
+.B \-\-json
+because the indented tree view has no columns to replace.
 .SS get
 Get page content as Markdown.
 .PP
@@ -317,12 +339,21 @@ Fetch a single page of results starting at this cursor.
 Fetch a single page of results.
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
 .TP
 .B \-\-envelope
 With
 .BR \-\-json ,
 include pagination metadata.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+An unknown name is a usage error listing what is available.
 .SS history
 Show page version history.
 .PP
@@ -342,12 +373,21 @@ Fetch a single page of results starting at this cursor.
 Fetch a single page of results.
 .TP
 .B \-\-json
-Output as a JSON array instead of a Rich table.
+Output as a JSON array.
+Each element is the complete object the server returned, not just the table
+columns.
 .TP
 .B \-\-envelope
 With
 .BR \-\-json ,
 include pagination metadata.
+.TP
+.BI \-\-fields " a,b,c"
+Comma\-separated list of fields to output.
+Applies to both
+.B \-\-json
+and the table, replacing the default columns.
+An unknown name is a usage error listing what is available.
 .SS export
 Export page content to a file.
 .PP

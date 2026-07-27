@@ -104,15 +104,25 @@ docmost-cli page export <page-id> --format md
 ## Output Format
 
 - **Content commands** (`page get`): Raw Markdown to stdout — directly usable
-- **List commands** (`--json`): JSON array — parse with standard JSON tools.
+- **List commands** (`--json`): JSON array of **complete server objects** — every
+  field the API returned, not a subset. For pages that means `id`, `slugId`,
+  `title`, `icon`, `position`, `parentPageId`, `spaceId`, `creatorId`,
+  `lastUpdatedById`, `isLocked`, `createdAt`, `updatedAt` and more. Page
+  *content* is not included; fetch it with `page get <id>`.
   Pagination is followed automatically, so the array is complete; add
   `--envelope` if you need `hasNextPage` / `nextCursor`
+- **Narrow the output** with `--fields id,title,updatedAt` when you only need a
+  few keys — worth doing to keep context small, since `--json` is now much
+  larger. It works in JSON and table mode, and an unknown name errors with the
+  list of fields the server actually returned
+- **Single-item commands** (`user me`, `workspace info`): add `--json` for the
+  complete object
 - **Write commands** (`page create`, `delete`): Page ID to stdout, confirmation to stderr
 - **Always use `--json`** for list/search commands when you need to parse the output programmatically
 
 ## Tips
 
-- Use `--json` flag on list commands to get parseable output
+- Use `--json` on list commands to get parseable output, plus `--fields` to keep it small
 - Page IDs are UUIDs like `019a2a69-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 - Space slugs are lowercase alphanumeric (e.g., `engineering`, `devtest`)
 - Use `-y` flag to skip confirmation prompts for automated workflows

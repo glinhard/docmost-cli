@@ -1,8 +1,8 @@
 """Page subcommands."""
 
-import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -32,16 +32,20 @@ from docmost_cli.cli._list_opts import (
     emit_list,
     envelope_option,
     fetch_list,
+    fields_option,
     json_option,
     limit_option,
     no_follow_option,
     page_size_option,
+    parse_fields,
+    validate_fields,
 )
 from docmost_cli.cli.main import get_client, state
 from docmost_cli.output.formatter import (
     print_content,
     print_content_with_meta,
     print_error,
+    print_json,
     print_result,
 )
 from docmost_cli.output.tree import print_tree
@@ -88,6 +92,33 @@ def _resolve_content(
             "echo '# Page' | docmost-cli page create ..."
         )
     return sys.stdin.read()
+
+
+def _project_tree(nodes: list[dict[str, Any]], fields: list[str]) -> list[dict[str, Any]]:
+    """Project each tree node to ``fields``, always preserving nested children.
+
+    ``children`` is written after the named fields and only when the source node
+    actually has a list, so leaves stay leaf-shaped.
+    """
+    projected: list[dict[str, Any]] = []
+    for node in nodes:
+        item: dict[str, Any] = {name: node.get(name) for name in fields}
+        children = node.get("children")
+        if isinstance(children, list):
+            item["children"] = _project_tree(children, fields)
+        projected.append(item)
+    return projected
+
+
+def _flatten_tree(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flatten a nested page tree so --fields can be validated at every depth."""
+    flat: list[dict[str, Any]] = []
+    for node in nodes:
+        flat.append(node)
+        children = node.get("children")
+        if isinstance(children, list):
+            flat.extend(_flatten_tree(children))
+    return flat
 
 
 @page_app.command("create")
@@ -265,6 +296,7 @@ def page_list_cmd(
     tree: bool = typer.Option(False, "--tree", help="Show as indented tree"),
     json_mode: bool = json_option(),
     envelope: bool = envelope_option(),
+    fields: str | None = fields_option(),
 ) -> None:
     """List pages in a space.
 
@@ -276,16 +308,27 @@ def page_list_cmd(
     client = get_client()
 
     if tree:
-        if limit is not None or cursor is not None or no_follow or envelope:
+        paginating = limit is not None or page_size is not None or cursor is not None
+        if paginating or no_follow or envelope:
             print_error(
                 "--tree cannot be combined with --limit, --page-size, --cursor, "
                 "--no-follow or --envelope.",
                 exit_code=2,
             )
+        selected = parse_fields(fields)
+        if selected is not None and not json_mode:
+            print_error(
+                "--fields requires --json when combined with --tree "
+                "(the tree view has no columns).",
+                exit_code=2,
+            )
         space_id = resolve_space_id(client, space_slug)
         pages = build_page_tree(client, space_id)
         if json_mode:
-            sys.stdout.write(json.dumps(pages, indent=2, default=str) + "\n")
+            if selected is not None:
+                validate_fields(selected, _flatten_tree(pages))
+                pages = _project_tree(pages, selected)
+            print_json(pages)
         else:
             print_tree(pages)
         return
@@ -301,7 +344,7 @@ def page_list_cmd(
         space_id=space_id,
     )
     columns = ["id", "title", "icon", "updatedAt", "parentPageId"]
-    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope, fields=fields)
 
 
 @page_app.command("get")
@@ -322,7 +365,7 @@ def page_get_cmd(
         pm_content = info.get("content")
         if not pm_content:
             print_error("No content available for raw output.", exit_code=1)
-        sys.stdout.write(json.dumps(pm_content, indent=2) + "\n")
+        print_json(pm_content)
         return
 
     # Normal mode: get content and convert to Markdown
@@ -386,6 +429,7 @@ def page_children_cmd(
     no_follow: bool = no_follow_option(),
     json_mode: bool = json_option(),
     envelope: bool = envelope_option(),
+    fields: str | None = fields_option(),
 ) -> None:
     """List child pages of a parent.
 
@@ -407,7 +451,7 @@ def page_children_cmd(
         space_id=space_id,
     )
     columns = ["id", "title", "icon", "updatedAt"]
-    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope, fields=fields)
 
 
 @page_app.command("history")
@@ -419,6 +463,7 @@ def page_history_cmd(
     no_follow: bool = no_follow_option(),
     json_mode: bool = json_option(),
     envelope: bool = envelope_option(),
+    fields: str | None = fields_option(),
 ) -> None:
     """Show page version history."""
     client = get_client()
@@ -432,7 +477,7 @@ def page_history_cmd(
         page_id=page_id,
     )
     columns = ["id", "creatorId", "createdAt"]
-    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope, fields=fields)
 
 
 @page_app.command("export")

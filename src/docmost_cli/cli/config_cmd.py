@@ -1,12 +1,14 @@
 """Config management subcommands: init, show, set, test, logout."""
 
 import sys
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from docmost_cli.api.auth import AuthError
+from docmost_cli.cli._list_opts import json_option
 from docmost_cli.config.store import (
     get_cache_dir,
     get_config_path,
@@ -14,7 +16,7 @@ from docmost_cli.config.store import (
     set_config_value,
     write_config,
 )
-from docmost_cli.output.formatter import print_error
+from docmost_cli.output.formatter import print_error, print_json
 
 __all__ = ["config_app"]
 
@@ -72,33 +74,52 @@ def config_init(
     _console.print("\nRun [bold]docmost-cli config test[/bold] to verify connectivity.")
 
 
+_SECRET_KEYS = {"api_key", "password"}
+
+
+def _display_values(values: dict[str, Any]) -> dict[str, Any]:
+    """Drop unset entries and mask secrets.
+
+    The sole producer of the displayable config, so the table and JSON paths
+    cannot drift — in particular, no future renderer can forget to mask.
+    """
+    return {
+        key: (_mask(value) if key in _SECRET_KEYS and isinstance(value, str) else value)
+        for key, value in values.items()
+        if value is not None and value != ""
+    }
+
+
 @config_app.command("show")
-def config_show() -> None:
+def config_show(
+    json_mode: bool = json_option("Output as a JSON object"),
+) -> None:
     """Show current configuration (secrets are masked)."""
     from docmost_cli.cli.main import state
 
     if state.settings:
-        values: dict[str, str] = {
+        values: dict[str, Any] = {
             "url": state.settings.url or "",
             "api_key": state.settings.api_key or "",
             "email": state.settings.email or "",
             "password": state.settings.password or "",
             "profile": state.settings.profile,
-            "no_session_cache": "true" if state.settings.no_session_cache else "false",
+            "no_session_cache": state.settings.no_session_cache,
         }
     else:
         values = {"profile": "default"}
 
+    display = _display_values(values)
+
+    if json_mode:
+        print_json(display)
+        return
+
     table = Table(title=f"Configuration — profile '{values.get('profile', 'default')}'")
     table.add_column("Key", style="bold")
     table.add_column("Value")
-
-    secret_keys = {"api_key", "password"}
-    for key, value in values.items():
-        if not value:
-            continue
-        display = _mask(value) if key in secret_keys else value
-        table.add_row(key, display)
+    for key, value in display.items():
+        table.add_row(key, str(value).lower() if isinstance(value, bool) else str(value))
 
     console = Console()
     console.print(table)
