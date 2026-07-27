@@ -1,6 +1,7 @@
 # docmost-cli
 
 <!-- Badges placeholder -->
+[![CI](https://github.com/glinhard/docmost-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/glinhard/docmost-cli/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/docmost-cli)](https://pypi.org/project/docmost-cli/)
 [![Python](https://img.shields.io/pypi/pyversions/docmost-cli)](https://pypi.org/project/docmost-cli/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
