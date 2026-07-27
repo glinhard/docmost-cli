@@ -1,9 +1,13 @@
 name: CI
 
-# Uses only first-party actions on conservative major pins, and installs with
-# pip rather than uv. The project prefers uv locally (see CLAUDE.md), but this
-# runner could not resolve `astral-sh/setup-uv`, and pip is the documented
-# fallback — a CI file that reliably runs beats a marginally faster one.
+# Uses only first-party actions, and installs with pip rather than uv. The
+# project prefers uv locally (see CLAUDE.md), but this runner could not resolve
+# `astral-sh/setup-uv@v9` at all, and pip is the documented fallback — a CI file
+# that reliably runs beats a marginally faster one.
+#
+# Pins are the current majors, which target Node 24. Node 20 is deprecated and
+# is being force-migrated on the runners, so checkout@v4 / setup-python@v5 would
+# have had a shelf life.
 
 on:
   push:
@@ -27,9 +31,9 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -60,9 +64,9 @@ jobs:
     name: lint and type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -88,9 +92,9 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
