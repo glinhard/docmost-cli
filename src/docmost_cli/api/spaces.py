@@ -3,7 +3,7 @@
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
-from docmost_cli.api.pagination import build_body
+from docmost_cli.api.pagination import build_body, unwrap_data
 from docmost_cli.output.formatter import print_error
 
 __all__ = [
@@ -54,7 +54,7 @@ def get_space_info(
     """
     if space_id:
         result = client.post("/spaces/info", json={"spaceId": space_id})
-        return result.get("data", result)
+        return unwrap_data(result)
     if slug:
         # /spaces/info only accepts spaceId, so search by slug in the full list
         return _find_space_by_slug(client, slug)
@@ -108,7 +108,7 @@ def resolve_space_id(client: DocmostClient, slug: str) -> str:
     """
     info = get_space_info(client, slug=slug)
     space_id = info.get("id")
-    if not space_id:
+    if not isinstance(space_id, str) or not space_id:
         print_error(f"Space '{slug}' not found.", exit_code=4)
     return space_id
 

@@ -18,7 +18,7 @@ from docmost_cli.output.formatter import print_error
 
 __all__ = ["config_app"]
 
-config_app = typer.Typer(name="config", help="Manage configuration.")
+config_app: typer.Typer = typer.Typer(name="config", help="Manage configuration.")
 _console = Console(stderr=True)
 
 

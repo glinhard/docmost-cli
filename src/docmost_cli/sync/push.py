@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from docmost_cli.output.formatter import _err_console as _err
-from docmost_cli.sync.diff import ChangeType, SyncDiff
+from docmost_cli.sync.diff import ChangeType, PageChange, SyncDiff
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -354,7 +354,7 @@ def _recreate_page(
     return new_id
 
 
-def _topological_sort(new_changes: list, existing_ids: set[str]) -> list:
+def _topological_sort(new_changes: list[PageChange], existing_ids: set[str]) -> list[PageChange]:
     """Sort new pages so parents are created before children.
 
     Pages with no parent or whose parent already exists on the server

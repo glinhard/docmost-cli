@@ -20,7 +20,7 @@ from docmost_cli.output.formatter import print_key_value
 
 __all__ = ["workspace_app"]
 
-workspace_app = typer.Typer(name="workspace", help="Workspace info.")
+workspace_app: typer.Typer = typer.Typer(name="workspace", help="Workspace info.")
 
 
 @workspace_app.command("info")

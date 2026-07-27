@@ -9,7 +9,7 @@ from docmost_cli.output.formatter import print_error
 
 __all__ = ["sync_app"]
 
-sync_app = typer.Typer(name="sync", help="Sync space pages to/from local directory.")
+sync_app: typer.Typer = typer.Typer(name="sync", help="Sync space pages to/from local directory.")
 
 
 @sync_app.command("pull")

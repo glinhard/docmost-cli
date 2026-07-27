@@ -18,7 +18,7 @@ from docmost_cli.cli.main import get_client
 
 __all__ = ["search_app"]
 
-search_app = typer.Typer(name="search", help="Search across the wiki.")
+search_app: typer.Typer = typer.Typer(name="search", help="Search across the wiki.")
 
 
 @search_app.command("query")

@@ -4,7 +4,7 @@ import random
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
-from docmost_cli.api.pagination import build_body
+from docmost_cli.api.pagination import build_body, unwrap_data
 from docmost_cli.api.position import PositionError, generate_key_between
 from docmost_cli.output.formatter import print_error, print_warning
 
@@ -63,7 +63,7 @@ def get_page_info(
         format=fmt,
     )
     result = client.post("/pages/info", json=body)
-    return result.get("data", result)
+    return unwrap_data(result)
 
 
 def create_page_via_import(
@@ -174,10 +174,7 @@ def _content_was_applied(
     Returns:
         True if the content was applied.
     """
-    data = response.get("data", response)
-    if not isinstance(data, dict):
-        return False
-
+    data = unwrap_data(response)
     returned = data.get("content")
     if isinstance(returned, str):
         return True

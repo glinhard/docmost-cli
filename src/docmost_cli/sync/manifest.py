@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from docmost_cli.output.formatter import print_error
 
@@ -86,7 +86,7 @@ def compute_content_hash(content: str) -> str:
     return f"sha256:{digest}"
 
 
-def load_manifest(dir_path: Path) -> dict | None:
+def load_manifest(dir_path: Path) -> dict[str, Any] | None:
     """Load the sync manifest from a directory.
 
     Args:
@@ -101,7 +101,7 @@ def load_manifest(dir_path: Path) -> dict | None:
     manifest_path = dir_path / MANIFEST_FILENAME
     try:
         with manifest_path.open("r", encoding="utf-8") as f:
-            manifest: dict = json.load(f)
+            manifest: dict[str, Any] = json.load(f)
     except FileNotFoundError:
         return None
     version = manifest.get("version", 0)
@@ -113,7 +113,7 @@ def load_manifest(dir_path: Path) -> dict | None:
     return manifest
 
 
-def save_manifest(dir_path: Path, manifest: dict) -> None:
+def save_manifest(dir_path: Path, manifest: dict[str, Any]) -> None:
     """Save the sync manifest to a directory as pretty-printed JSON.
 
     Uses atomic write (write to ``.tmp`` then rename) to avoid
@@ -134,8 +134,8 @@ def save_manifest(dir_path: Path, manifest: dict) -> None:
 def build_manifest(
     space_slug: str,
     space_id: str,
-    pages: list[dict],
-) -> dict:
+    pages: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Build a new manifest dict from page data.
 
     Args:
@@ -149,7 +149,7 @@ def build_manifest(
         A complete manifest dict ready for :func:`save_manifest`.
     """
     now = datetime.now(UTC).isoformat()
-    pages_by_id: dict[str, dict] = {}
+    pages_by_id: dict[str, dict[str, Any]] = {}
     for page in pages:
         pages_by_id[page["id"]] = build_page_entry(
             title=page["title"],
@@ -173,7 +173,7 @@ def build_page_entry(
     parent_id: str | None,
     icon: str,
     content_hash: str,
-) -> dict:
+) -> dict[str, Any]:
     """Build a single page entry for inclusion in the manifest.
 
     Args:

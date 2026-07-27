@@ -48,7 +48,7 @@ from docmost_cli.output.tree import print_tree
 
 __all__ = ["page_app"]
 
-page_app = typer.Typer(name="page", help="Page operations.")
+page_app: typer.Typer = typer.Typer(name="page", help="Page operations.")
 
 
 def _resolve_content(

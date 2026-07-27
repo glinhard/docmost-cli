@@ -10,7 +10,7 @@ from docmost_cli.output.formatter import print_key_value
 
 __all__ = ["user_app"]
 
-user_app = typer.Typer(name="user", help="Current user info.")
+user_app: typer.Typer = typer.Typer(name="user", help="Current user info.")
 
 
 @user_app.command("me")

@@ -11,7 +11,7 @@ All API calls go through this client. It handles:
 import logging
 import sys
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -42,7 +42,7 @@ class DocmostClient:
             )
 
         self._settings = settings
-        self._base_url = settings.url.rstrip("/")  # type: ignore[union-attr]
+        self._base_url = settings.url.rstrip("/")
         self._auth: AuthStrategy = create_auth(settings)
         self._http = httpx.Client(timeout=30.0)
         self._verbose = verbose
@@ -168,7 +168,8 @@ class DocmostClient:
         url = f"{self._base_url}/api{path}"
         request = self._http.build_request(method, url, **kwargs)
         response = self._send_with_retry(request)
-        return response.json()
+        # Every Docmost endpoint returns a JSON object envelope.
+        return cast("dict[str, Any]", response.json())
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         """Convenience method for POST requests.
@@ -203,7 +204,8 @@ class DocmostClient:
         url = f"{self._base_url}/api{path}"
         request = self._http.build_request("POST", url, data=data, files=files)
         response = self._send_with_retry(request)
-        return response.json()
+        # Every Docmost endpoint returns a JSON object envelope.
+        return cast("dict[str, Any]", response.json())
 
     def post_raw(
         self, path: str, json: dict[str, Any] | None = None, *, raise_on_error: bool = True

@@ -24,7 +24,7 @@ from docmost_cli.output.formatter import print_error, print_result
 
 __all__ = ["space_app"]
 
-space_app = typer.Typer(name="space", help="Space operations.")
+space_app: typer.Typer = typer.Typer(name="space", help="Space operations.")
 
 
 @space_app.command("list")

@@ -18,7 +18,7 @@ from docmost_cli.cli.main import get_client
 
 __all__ = ["attachment_app"]
 
-attachment_app = typer.Typer(name="attachment", help="Attachment operations.")
+attachment_app: typer.Typer = typer.Typer(name="attachment", help="Attachment operations.")
 
 
 @attachment_app.command("search")
