@@ -36,6 +36,28 @@ ruff check src/ tests/
 ruff format src/ tests/
 ```
 
+## Releasing
+
+1. Bump `__version__` in `src/docmost_cli/__init__.py` (the single source — the
+   build derives from it) and add a `CHANGELOG.md` section.
+2. Update the `.TH` version line in all ten `man/man1/*.1` pages.
+   `tests/test_docs/test_man_pages.py` fails if they drift.
+3. Merge to `main`, then push a matching tag: `git tag v0.6.0 && git push origin v0.6.0`.
+
+`.github/workflows/release.yml` takes it from there: full test suite, tag ↔
+`__version__` guard, a check that the version is not already on PyPI, build,
+`twine check`, wheel-content checks, then publish and cut a GitHub Release with
+the CHANGELOG section as notes.
+
+Publishing uses **PyPI Trusted Publishing (OIDC)** — no API token is stored in
+the repo. It requires a one-time setup on pypi.org under the project's
+Publishing settings: owner `glinhard`, repository `docmost-cli`, workflow
+`release.yml`, environment `pypi`.
+
+Uploading is gated on the ref being a tag, so a manual dispatch can never
+publish regardless of its inputs — use **Actions → Release → Run workflow** to
+dry-run the whole chain (including third-party action resolution) first.
+
 CI (`.github/workflows/ci.yml`) runs the same gates on every push to `main` and
 every pull request: `pytest` on Python 3.11/3.12/3.13, and `ruff check`,
 `ruff format --check` and `mypy src/` once. `mypy` must stay at **zero** errors —
