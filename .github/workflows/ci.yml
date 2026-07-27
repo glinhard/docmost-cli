@@ -8,6 +8,9 @@ name: CI
 # Pins are the current majors, which target Node 24. Node 20 is deprecated and
 # is being force-migrated on the runners, so checkout@v4 / setup-python@v5 would
 # have had a shelf life.
+#
+# actionlint is downloaded and checksummed rather than run as an action, for the
+# same reason: one less third-party resolution in the path.
 
 on:
   push:
@@ -87,6 +90,34 @@ jobs:
       # python_version = "3.11", so the result is interpreter-independent.
       - name: Mypy (strict)
         run: python -m mypy src/
+
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    # Bump both together: the checksum is for the linux_amd64 tarball of this
+    # exact version, published on the actionlint releases page.
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum --check --strict
+          tar xzf actionlint.tar.gz actionlint
+
+      - name: Lint the workflows
+        # actionlint only shell-lints `run:` blocks when shellcheck is on PATH,
+        # and quietly skips them when it is not. Assert it, rather than trust the
+        # runner image to keep shipping it and lose half the coverage in silence.
+        run: |
+          set -euo pipefail
+          command -v shellcheck
+          ./actionlint -color
 
   build:
     name: build
