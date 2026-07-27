@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+Nothing user-facing yet. The CLI behaves exactly as 0.6.0 did; the changes so
+far are to how the project is built and released.
+
+### Changed
+
+- The release workflow no longer mistakes a null release body for hand-written
+  notes. GitHub types a release body as nullable and `jq` renders a null as the
+  text `null`, so the emptiness check read "no notes" as "notes a human wrote"
+  and skipped filling them from this file.
+- `upload-artifact` and `download-artifact` moved to their Node 24 majors, which
+  the runners had begun force-migrating.
+- CI lints the workflow files with actionlint, including shellcheck over every
+  `run:` block. Nothing checked them before, which is how an unresolvable action
+  pin, two deprecated runtimes and the null-body bug all reached `main` green.
+
 ## 0.6.0 (2026-07-27)
 
 ### Behavior changes

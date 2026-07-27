@@ -42,7 +42,10 @@ ruff format src/ tests/
    build derives from it) and add a `CHANGELOG.md` section.
 2. Update the `.TH` version line in all ten `man/man1/*.1` pages.
    `tests/test_docs/test_man_pages.py` fails if they drift.
-3. Merge to `main`, then push a matching tag: `git tag v0.6.0 && git push origin v0.6.0`.
+3. Merge to `main`, then push a matching tag: `git tag v0.7.0 && git push origin v0.7.0`.
+   Without a local clone, use **Releases → Draft a new release → Choose a tag →
+   create it on publish**. The workflow handles a release that already exists,
+   and fills in notes from `CHANGELOG.md` only if the body was left empty.
 
 `.github/workflows/release.yml` takes it from there: full test suite, tag ↔
 `__version__` guard, a check that the version is not already on PyPI, build,
