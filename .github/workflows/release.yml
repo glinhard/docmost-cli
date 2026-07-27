@@ -118,9 +118,12 @@ jobs:
           print(f"{wheel.name}: {len(pages)} man pages, licence metadata OK")
           PY
 
-      # upload@v7 and download@v8 are a matched pair: v7 uploads files directly
-      # instead of zipping them, and v8 is the major that stopped trying to
-      # un-zip a download that was never a zip. Bump them together.
+      # upload@v7 and download@v8 are a matched pair and should move together:
+      # v7 added the option to upload files as-is, and v8 is the major that
+      # stopped assuming every download is a zip.
+      #
+      # Keep `archive` at its default of true. Uploading as-is takes only a
+      # single file, and this step ships two — the wheel and the sdist.
       - uses: actions/upload-artifact@v7
         with:
           name: dist
@@ -209,7 +212,11 @@ jobs:
 
             # Only fill in notes if whoever created it left them empty —
             # never overwrite notes a human wrote by hand.
-            if [ -z "$(gh release view "$tag" --json body --jq '.body' | tr -d '[:space:]')" ]; then
+            #
+            # `body` is a nullable string, and jq renders a null as the four
+            # characters "null" — non-empty, so without the `// ""` this test
+            # reads an empty release as one a human had already written.
+            if [ -z "$(gh release view "$tag" --json body --jq '.body // ""' | tr -d '[:space:]')" ]; then
               echo "Release body is empty; filling it from CHANGELOG.md."
               gh release edit "$tag" --notes-file release-notes.md
             else
