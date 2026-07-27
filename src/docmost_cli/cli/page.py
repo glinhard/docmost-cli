@@ -20,18 +20,29 @@ from docmost_cli.api.pages import (
     import_page,
     list_recent_pages,
     move_page,
+    resolve_position,
     update_page_content,
     update_page_meta,
 )
-from docmost_cli.api.pagination import extract_id, extract_items
+from docmost_cli.api.pagination import extract_id
+from docmost_cli.api.position import MAX_POSITION_LEN, MIN_POSITION_LEN, is_valid_position
 from docmost_cli.api.spaces import resolve_space_id
+from docmost_cli.cli._list_opts import (
+    cursor_option,
+    emit_list,
+    envelope_option,
+    fetch_list,
+    json_option,
+    limit_option,
+    no_follow_option,
+    page_size_option,
+)
 from docmost_cli.cli.main import get_client, state
 from docmost_cli.output.formatter import (
     print_content,
     print_content_with_meta,
     print_error,
     print_result,
-    print_table,
 )
 from docmost_cli.output.tree import print_tree
 
@@ -120,14 +131,28 @@ def page_update_cmd(
     content: str | None = typer.Option(None, "--content", help="New content (Markdown)"),
     file: Path | None = typer.Option(None, "--file", help="Read content from file"),
     stdin: bool = typer.Option(False, "--stdin", help="Read content from stdin"),
+    append: bool = typer.Option(False, "--append", help="Append instead of replacing content"),
+    prepend: bool = typer.Option(
+        False, "--prepend", help="Insert at the start instead of replacing content"
+    ),
 ) -> None:
     """Update an existing page's title, icon, and/or content.
+
+    Content updates are applied in place: the page keeps its ID, slug, history
+    and inbound links. Requires Docmost v0.71 or newer.
 
     See also: page move (reposition), page get (view current content).
     """
     resolved = _resolve_content(content, file, stdin)
     if title is None and icon is None and resolved is None:
         print_error("At least one of --title, --icon, --content, --file, or --stdin is required.")
+    if append and prepend:
+        print_error("--append and --prepend are mutually exclusive.", exit_code=2)
+    if (append or prepend) and resolved is None:
+        flag = "--append" if append else "--prepend"
+        print_error(f"{flag} requires --content, --file, or --stdin.", exit_code=2)
+
+    operation = "append" if append else "prepend" if prepend else "replace"
 
     client = get_client()
     info = get_page_info(client, page_id)
@@ -139,7 +164,7 @@ def page_update_cmd(
             page_title = title
 
     if resolved is not None:
-        update_page_content(client, page_id=page_id, content=resolved)
+        update_page_content(client, page_id=page_id, content=resolved, operation=operation)
 
     print_result(page_id, f"Updated page '{page_title}'")
 
@@ -168,54 +193,115 @@ def page_move_cmd(
     page_id: str = typer.Argument(help="Page ID to move"),
     parent: str | None = typer.Option(None, "--parent", help="New parent page ID"),
     space: str | None = typer.Option(None, "--space", help="Target space slug"),
-    position: str | None = typer.Option(None, "--position", help="Position among siblings"),
+    root: bool = typer.Option(False, "--root", help="Move to the space root (clear the parent)"),
+    position: str = typer.Option(
+        "first",
+        "--position",
+        help="Placement among siblings: 'first', 'last', or a 5-12 character ordering key",
+    ),
 ) -> None:
     """Move a page to a new location.
 
+    Docmost requires an ordering key on every move, so one is computed from the
+    destination's existing children unless an explicit key is given.
+
     See also: page children (find targets), page list --tree (view hierarchy).
     """
-    if parent is None and space is None and position is None:
-        print_error("At least one of --parent, --space, or --position is required.")
+    if parent is None and space is None and not root and position == "first":
+        print_error("At least one of --parent, --space, --root, or --position is required.")
+    if root and parent is not None:
+        print_error("--root and --parent are mutually exclusive.", exit_code=2)
 
     client = get_client()
-    target_space_id = None
-    if space is not None:
-        target_space_id = resolve_space_id(client, space)
+    info = get_page_info(client, page_id)
+
+    target_space_id = resolve_space_id(client, space) if space is not None else None
+    space_id = target_space_id or str(info.get("spaceId", ""))
+
+    if root:
+        parent_page_id = None
+    elif parent is not None:
+        parent_page_id = parent
+    else:
+        current_parent = info.get("parentPageId")
+        parent_page_id = str(current_parent) if current_parent else None
+
+    placement = position.lower()
+    if placement in ("first", "last"):
+        resolved_position = resolve_position(
+            client,
+            page_id=page_id,
+            space_id=space_id,
+            parent_page_id=parent_page_id,
+            placement=placement,
+        )
+    elif is_valid_position(position):
+        resolved_position = position
+    else:
+        print_error(
+            f"Invalid --position '{position}'. Expected 'first', 'last', or a "
+            f"{MIN_POSITION_LEN}-{MAX_POSITION_LEN} character ordering key using "
+            "only 0-9, A-Z, a-z.",
+            exit_code=2,
+        )
 
     move_page(
         client,
         page_id=page_id,
-        parent_page_id=parent,
+        position=resolved_position,
+        parent_page_id=parent_page_id,
         space_id=target_space_id,
-        position=position,
     )
-    print_result(page_id, f"Moved page '{page_id}'")
+    print_result(page_id, f"Moved page '{info.get('title', page_id)}'")
 
 
 @page_app.command("list")
 def page_list_cmd(
     space_slug: str = typer.Argument(help="Space slug to list pages in"),
-    limit: int | None = typer.Option(None, "--limit", help="Max results (default: 50)"),
-    cursor: str | None = typer.Option(None, "--cursor", help="Pagination cursor"),
+    limit: int | None = limit_option(),
+    page_size: int | None = page_size_option(),
+    cursor: str | None = cursor_option(),
+    no_follow: bool = no_follow_option(),
     tree: bool = typer.Option(False, "--tree", help="Show as indented tree"),
-    json_mode: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    json_mode: bool = json_option(),
+    envelope: bool = envelope_option(),
 ) -> None:
     """List pages in a space.
+
+    Follows pagination automatically; use --limit to cap the total, or
+    --cursor/--no-follow to fetch a single page.
 
     See also: page children (list by parent), page get (single page).
     """
     client = get_client()
-    space_id = resolve_space_id(client, space_slug)
 
     if tree:
+        if limit is not None or cursor is not None or no_follow or envelope:
+            print_error(
+                "--tree cannot be combined with --limit, --page-size, --cursor, "
+                "--no-follow or --envelope.",
+                exit_code=2,
+            )
+        space_id = resolve_space_id(client, space_slug)
         pages = build_page_tree(client, space_id)
-        print_tree(pages)
+        if json_mode:
+            sys.stdout.write(json.dumps(pages, indent=2, default=str) + "\n")
+        else:
+            print_tree(pages)
         return
 
-    result = list_recent_pages(client, space_id, limit=limit, cursor=cursor)
-    items = extract_items(result)
+    space_id = resolve_space_id(client, space_slug)
+    result = fetch_list(
+        list_recent_pages,
+        limit=limit,
+        page_size=page_size,
+        cursor=cursor,
+        no_follow=no_follow,
+        client=client,
+        space_id=space_id,
+    )
     columns = ["id", "title", "icon", "updatedAt", "parentPageId"]
-    print_table(items, columns, json_mode=json_mode)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
 
 
 @page_app.command("get")
@@ -294,31 +380,59 @@ def page_copy_cmd(
 @page_app.command("children")
 def page_children_cmd(
     page_id: str = typer.Argument(help="Page ID to list children for"),
-    json_mode: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    limit: int | None = limit_option(),
+    page_size: int | None = page_size_option(),
+    cursor: str | None = cursor_option(),
+    no_follow: bool = no_follow_option(),
+    json_mode: bool = json_option(),
+    envelope: bool = envelope_option(),
 ) -> None:
     """List child pages of a parent.
+
+    Follows pagination automatically — the server's default page size is 20.
 
     See also: page list --tree (full hierarchy), page move (reposition).
     """
     client = get_client()
-    result = get_page_children(client, page_id)
-    items = extract_items(result)
+    # Resolve the space once so paginated requests don't re-fetch page info.
+    space_id = get_page_info(client, page_id).get("spaceId", "")
+    result = fetch_list(
+        get_page_children,
+        limit=limit,
+        page_size=page_size,
+        cursor=cursor,
+        no_follow=no_follow,
+        client=client,
+        page_id=page_id,
+        space_id=space_id,
+    )
     columns = ["id", "title", "icon", "updatedAt"]
-    print_table(items, columns, json_mode=json_mode)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
 
 
 @page_app.command("history")
 def page_history_cmd(
     page_id: str = typer.Argument(help="Page ID to show history for"),
-    limit: int | None = typer.Option(None, "--limit", help="Max results"),
-    json_mode: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    limit: int | None = limit_option(),
+    page_size: int | None = page_size_option(),
+    cursor: str | None = cursor_option(),
+    no_follow: bool = no_follow_option(),
+    json_mode: bool = json_option(),
+    envelope: bool = envelope_option(),
 ) -> None:
     """Show page version history."""
     client = get_client()
-    result = get_page_history(client, page_id, limit=limit)
-    items = extract_items(result)
+    result = fetch_list(
+        get_page_history,
+        limit=limit,
+        page_size=page_size,
+        cursor=cursor,
+        no_follow=no_follow,
+        client=client,
+        page_id=page_id,
+    )
     columns = ["id", "creatorId", "createdAt"]
-    print_table(items, columns, json_mode=json_mode)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
 
 
 @page_app.command("export")

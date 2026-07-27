@@ -70,16 +70,18 @@ docmost-cli page create <space-slug> --title "My Page" --file content.md
 | `docmost-cli config show` | Show current configuration (secrets masked) |
 | `docmost-cli config set <key> <value>` | Set a configuration value |
 | `docmost-cli config test` | Test connectivity and authentication |
+| `docmost-cli config logout` | Delete the cached session token |
+| `docmost-cli version` | Show the version (also `--version` / `-V`) |
 | `docmost-cli page list <space-slug>` | List pages in a space (`--tree`, `--json`) |
 | `docmost-cli page get <page-id>` | Get page content as Markdown (`--meta`, `--raw`) |
 | `docmost-cli page create <space-slug>` | Create a new page (`--title`, `--file`, `--stdin`) |
-| `docmost-cli page update <page-id>` | Update a page (`--title`, `--content`, `--file`) |
+| `docmost-cli page update <page-id>` | Update a page in place (`--title`, `--icon`, `--content`, `--file`, `--stdin`, `--append`, `--prepend`) |
 | `docmost-cli page delete <page-id>` | Delete a page (with confirmation, `--yes` to skip) |
-| `docmost-cli page move <page-id>` | Move a page (`--parent`, `--space`, `--position`) |
+| `docmost-cli page move <page-id>` | Move a page (`--parent`, `--space`, `--root`, `--position first\|last\|<key>`) |
 | `docmost-cli page duplicate <page-id>` | Duplicate a page |
 | `docmost-cli page copy <page-id>` | Copy a page to another space (`--space`) |
-| `docmost-cli page children <page-id>` | List child pages (`--json`) |
-| `docmost-cli page history <page-id>` | Show page version history (`--json`) |
+| `docmost-cli page children <page-id>` | List child pages (`--json`, pagination flags) |
+| `docmost-cli page history <page-id>` | Show page version history (`--json`, pagination flags) |
 | `docmost-cli page export <page-id>` | Export page (`--format md\|html`, `--output`) |
 | `docmost-cli page import <space-slug>` | Import a Markdown file as a new page |
 | `docmost-cli space list` | List all spaces (`--detail`, `--json`) |
@@ -90,10 +92,34 @@ docmost-cli page create <space-slug> --title "My Page" --file content.md
 | `docmost-cli comment create <page-id>` | Add a comment (`--content`) |
 | `docmost-cli comment update <comment-id>` | Edit a comment (`--content`) |
 | `docmost-cli search <query>` | Full-text search (`--space`, `--limit`, `--json`) |
-| `docmost-cli attachment search <query>` | Search attachments (`--space`) |
+| `docmost-cli attachment search <query>` | Search attachments (`--space`, `--json`, pagination flags) |
 | `docmost-cli workspace info` | Show workspace details |
 | `docmost-cli workspace members` | List workspace members (`--json`) |
 | `docmost-cli user me` | Show authenticated user info |
+| `docmost-cli sync pull <space-slug>` | Download a space to local Markdown files (`--dir`, `--force`) |
+| `docmost-cli sync push <space-slug>` | Upload local changes (`--dir`, `--dry-run`, `--delete`, `--allow-recreate`) |
+| `docmost-cli sync status <space-slug>` | Show local changes against the last pull (`--dir`) |
+
+### Pagination
+
+Every list command follows pagination automatically and shares the same flags:
+
+| Flag | Description |
+|---|---|
+| `--limit N` | Max total results across all pages (default: all) |
+| `--page-size N` | Results per request, 1-100 (default: 100, the server maximum) |
+| `--cursor <c>` | Fetch a single page starting at this cursor |
+| `--no-follow` | Fetch a single page instead of following pagination |
+| `--json` | Output a bare JSON array |
+| `--envelope` | With `--json`, emit `{"items": [...], "meta": {...}}` instead |
+
+```bash
+# Every page in the space, not just the server's first page
+docmost-cli page list eng --json | jq 'length'
+
+# Drive the cursor yourself
+docmost-cli page list eng --no-follow --json --envelope | jq -r .meta.nextCursor
+```
 
 ## Configuration
 
@@ -136,6 +162,7 @@ All configuration values can be overridden via environment variables:
 | `DOCMOST_EMAIL` | Login email (Community edition) |
 | `DOCMOST_PASSWORD` | Login password (Community edition) |
 | `DOCMOST_PROFILE` | Active profile name |
+| `DOCMOST_NO_SESSION_CACHE` | Keep the session JWT in memory; never read or write `~/.cache/docmost-cli/session.json` |
 
 Environment variables take precedence over config file values.
 

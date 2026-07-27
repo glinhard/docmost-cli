@@ -96,13 +96,17 @@ docmost-cli page export <page-id> --format md
 
 1. Get current content: `docmost-cli page get <page-id>`
 2. Modify the Markdown content as needed
-3. Update: `docmost-cli page update <page-id> --title "Updated Title"`
-4. Note: Content update via REST may not be available on Community edition
+3. Update: `docmost-cli page update <page-id> --file updated.md`
+4. Content updates are applied in place — the page keeps its ID, slug, history
+   and inbound links. Works on Community and Enterprise alike, from Docmost
+   v0.71. Use `--append` / `--prepend` to add without replacing.
 
 ## Output Format
 
 - **Content commands** (`page get`): Raw Markdown to stdout — directly usable
-- **List commands** (`--json`): JSON array — parse with standard JSON tools
+- **List commands** (`--json`): JSON array — parse with standard JSON tools.
+  Pagination is followed automatically, so the array is complete; add
+  `--envelope` if you need `hasNextPage` / `nextCursor`
 - **Write commands** (`page create`, `delete`): Page ID to stdout, confirmation to stderr
 - **Always use `--json`** for list/search commands when you need to parse the output programmatically
 

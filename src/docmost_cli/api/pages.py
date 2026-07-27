@@ -1,13 +1,16 @@
 """Page API methods."""
 
+import random
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
 from docmost_cli.api.pagination import build_body
-from docmost_cli.output.formatter import print_error
+from docmost_cli.api.position import PositionError, generate_key_between
+from docmost_cli.output.formatter import print_error, print_warning
 
 __all__ = [
-    "POSITION_FIRST",
+    "CONTENT_OPERATIONS",
+    "CONTENT_UNSUPPORTED_MESSAGE",
     "build_page_tree",
     "copy_page",
     "create_and_place_page",
@@ -15,6 +18,8 @@ __all__ = [
     "delete_page",
     "duplicate_page",
     "export_page",
+    "get_all_page_children",
+    "get_all_sidebar_pages",
     "get_page_children",
     "get_page_content",
     "get_page_history",
@@ -23,26 +28,41 @@ __all__ = [
     "import_page",
     "list_recent_pages",
     "move_page",
+    "resolve_position",
     "try_update_page_content",
     "update_page_content",
     "update_page_meta",
 ]
 
-# Fractional index string meaning "place at beginning" in Docmost's ordering.
-POSITION_FIRST = "aaaaa"
 
-
-def get_page_info(client: DocmostClient, page_id: str) -> dict[str, Any]:
+def get_page_info(
+    client: DocmostClient,
+    page_id: str,
+    *,
+    include_space: bool = False,
+    include_content: bool = False,
+    fmt: str | None = None,
+) -> dict[str, Any]:
     """Get page metadata by ID.
 
     Args:
         client: Authenticated Docmost client.
         page_id: Page UUID.
+        include_space: Include the parent space in the response.
+        include_content: Include the page body in the response.
+        fmt: Content format ("json", "markdown" or "html"). Only meaningful
+            together with include_content.
 
     Returns:
         Page info dict (unwrapped from data envelope).
     """
-    result = client.post("/pages/info", json={"pageId": page_id})
+    body = build_body(
+        {"pageId": page_id},
+        includeSpace=include_space or None,
+        includeContent=include_content or None,
+        format=fmt,
+    )
+    result = client.post("/pages/info", json=body)
     return result.get("data", result)
 
 
@@ -107,42 +127,115 @@ def update_page_meta(
     return client.post("/pages/update", json=body)
 
 
+CONTENT_OPERATIONS = ("replace", "append", "prepend")
+
+CONTENT_UNSUPPORTED_MESSAGE = (
+    "This Docmost server accepted the request but did not apply the content "
+    "(POST /api/pages/update silently ignored 'content'). In-place content "
+    "updates require Docmost v0.71 or newer. Upgrade the server, or use "
+    "'docmost-cli sync push --allow-recreate' to replace pages by "
+    "delete+recreate — that assigns NEW page IDs and breaks inbound links, "
+    "permissions, comments and page history."
+)
+
+
+def _content_body(page_id: str, content: str, fmt: str, operation: str) -> dict[str, Any]:
+    """Build the /pages/update request body for a content update."""
+    return {
+        "pageId": page_id,
+        "content": content,
+        "format": fmt,
+        "operation": operation,
+    }
+
+
+def _content_was_applied(
+    client: DocmostClient,
+    response: dict[str, Any],
+    *,
+    page_id: str,
+    sent_content: str,
+) -> bool:
+    """Decide whether the server actually applied a content update.
+
+    Docmost's global ValidationPipe uses ``whitelist: true`` without
+    ``forbidNonWhitelisted``, so a server too old to know about ``content``
+    strips the field and returns HTTP 200 — a silent no-op. The tell is the
+    shape of the returned content: a server that honoured ``format:
+    "markdown"`` converts it to a Markdown **string**, while one that stripped
+    our fields returns ProseMirror JSON (an **object**) or nothing at all.
+
+    Args:
+        client: Authenticated Docmost client, for the ambiguous-case re-read.
+        response: Raw response from POST /pages/update.
+        page_id: Page UUID.
+        sent_content: The content we asked the server to store.
+
+    Returns:
+        True if the content was applied.
+    """
+    data = response.get("data", response)
+    if not isinstance(data, dict):
+        return False
+
+    returned = data.get("content")
+    if isinstance(returned, str):
+        return True
+    if returned is not None:
+        # ProseMirror JSON came back: `format` was stripped, so `content` was too.
+        return False
+
+    # No content in the response. Empty input legitimately yields nothing;
+    # otherwise confirm with a single read-back.
+    probe = sent_content.strip()
+    if not probe:
+        return True
+
+    info = get_page_info(client, page_id, include_content=True, fmt="markdown")
+    stored = info.get("content")
+    if not isinstance(stored, str):
+        return False
+    first_line = next((line for line in probe.splitlines() if line.strip()), "")
+    return first_line.strip() in stored
+
+
 def update_page_content(
     client: DocmostClient,
     *,
     page_id: str,
     content: str,
     fmt: str = "markdown",
+    operation: str = "replace",
 ) -> dict[str, Any]:
-    """Update page content via REST endpoint.
+    """Update page content in place.
 
-    This endpoint may only be available on Enterprise edition (v0.70+).
-    On Community edition, this may return 404/405.
+    Sends the content through POST /pages/update, which Docmost routes to its
+    collaboration gateway (`handleYjsEvent`) server-side. The page keeps its
+    ID, slug, history, comments and inbound links — no WebSocket client is
+    needed on this end.
+
+    Available on Community and Enterprise alike, from Docmost v0.71.
 
     Args:
         client: Authenticated Docmost client.
         page_id: Page UUID.
         content: Markdown or HTML content.
         fmt: Content format ("markdown" or "html").
+        operation: One of "replace", "append", "prepend".
 
     Returns:
         Raw API response dict.
     """
-    try:
-        return client.post(
-            "/pages/content/update",
-            json={"pageId": page_id, "content": content, "format": fmt},
+    if operation not in CONTENT_OPERATIONS:
+        print_error(
+            f"Invalid content operation '{operation}'. "
+            f"Expected one of: {', '.join(CONTENT_OPERATIONS)}.",
+            exit_code=2,
         )
-    except SystemExit as exc:
-        if exc.code == 4:  # 404 — endpoint not available
-            print_error(
-                "Content update is not available on this Docmost instance. "
-                "This feature may require Enterprise edition (v0.70+). "
-                "Use 'docmost-cli page delete' + 'docmost-cli page create' "
-                "to replace page content.",
-                exit_code=1,
-            )
-        raise
+    response = client.post("/pages/update", json=_content_body(page_id, content, fmt, operation))
+    if not _content_was_applied(client, response, page_id=page_id, sent_content=content):
+        print_error(CONTENT_UNSUPPORTED_MESSAGE, exit_code=1)
+    return response
 
 
 def try_update_page_content(
@@ -151,27 +244,37 @@ def try_update_page_content(
     page_id: str,
     content: str,
     fmt: str = "markdown",
+    operation: str = "replace",
 ) -> bool:
-    """Try updating page content via Enterprise endpoint.
+    """Probe whether this server supports in-place content updates.
 
-    Silently probes the endpoint without raising on failure.
-    Use this to detect whether the Enterprise content-update API is available.
+    Performs the update and reports success without raising, so callers can
+    decide what to do about a server that cannot apply content.
 
     Args:
         client: Authenticated Docmost client.
         page_id: Page UUID.
         content: Markdown or HTML content.
         fmt: Content format ("markdown" or "html").
+        operation: One of "replace", "append", "prepend".
 
     Returns:
-        True if the update succeeded, False if the endpoint is unavailable.
+        True if the content was applied.
     """
-    response = client.post_raw(
-        "/pages/content/update",
-        json={"pageId": page_id, "content": content, "format": fmt},
+    raw = client.post_raw(
+        "/pages/update",
+        json=_content_body(page_id, content, fmt, operation),
         raise_on_error=False,
     )
-    return response.is_success
+    if not raw.is_success:
+        return False
+    try:
+        response = raw.json()
+    except ValueError:
+        return False
+    if not isinstance(response, dict):
+        return False
+    return _content_was_applied(client, response, page_id=page_id, sent_content=content)
 
 
 def create_and_place_page(
@@ -209,7 +312,13 @@ def create_and_place_page(
             client,
             page_id=page_id,
             parent_page_id=parent_page_id,
-            position=POSITION_FIRST,
+            position=resolve_position(
+                client,
+                page_id=page_id,
+                space_id=space_id,
+                parent_page_id=parent_page_id,
+                placement="first",
+            ),
         )
     if icon:
         update_page_meta(client, page_id=page_id, icon=icon)
@@ -236,31 +345,92 @@ def move_page(
     client: DocmostClient,
     *,
     page_id: str,
+    position: str,
     parent_page_id: str | None = None,
     space_id: str | None = None,
-    position: str | int | None = None,
 ) -> dict[str, Any]:
     """Move a page to a new location.
 
     Available on both Community and Enterprise editions.
 
+    ``position`` is required: Docmost's MovePageDto declares it
+    ``@IsString @MinLength(5) @MaxLength(12)``, so omitting it is an HTTP 400.
+    Use resolve_position() to compute one from the destination's siblings.
+
     Args:
         client: Authenticated Docmost client.
         page_id: Page UUID.
+        position: Fractional index among siblings (5-12 characters).
         parent_page_id: New parent page UUID (omit for root).
         space_id: Target space UUID (for cross-space moves).
-        position: Position among siblings (fractional index string, 5-12 chars).
 
     Returns:
         Raw API response dict.
     """
     body = build_body(
-        {"pageId": page_id},
+        {"pageId": page_id, "position": position},
         parentPageId=parent_page_id,
         spaceId=space_id,
-        position=position,
     )
     return client.post("/pages/move", json=body)
+
+
+def resolve_position(
+    client: DocmostClient,
+    *,
+    page_id: str,
+    space_id: str,
+    parent_page_id: str | None = None,
+    placement: str = "first",
+    rng: random.Random | None = None,
+) -> str:
+    """Compute a fractional index placing a page first or last among siblings.
+
+    Reads the destination's existing children (following pagination, so a
+    parent with more than one page of children still yields the true extremes)
+    and generates a key before the smallest or after the largest.
+
+    Args:
+        client: Authenticated Docmost client.
+        page_id: The page being moved, excluded from the sibling scan.
+        space_id: Space UUID of the destination.
+        parent_page_id: Destination parent, or None for the space root.
+        placement: "first" or "last".
+        rng: Random source, injectable for deterministic tests.
+
+    Returns:
+        A position string accepted by POST /pages/move.
+    """
+    if parent_page_id:
+        siblings = get_all_page_children(client, parent_page_id, space_id=space_id)
+    else:
+        siblings = get_all_sidebar_pages(client, space_id)
+
+    positions = sorted(
+        str(sibling["position"])
+        for sibling in siblings
+        if sibling.get("id") != page_id and sibling.get("position")
+    )
+
+    if not positions:
+        if siblings:
+            print_warning(
+                "Could not read sibling ordering keys from this server; placing the "
+                "page using a default position."
+            )
+        return generate_key_between(None, None, rng=rng)
+
+    try:
+        if placement == "last":
+            return generate_key_between(positions[-1], None, rng=rng)
+        return generate_key_between(None, positions[0], rng=rng)
+    except PositionError as exc:
+        print_error(
+            f"Cannot compute a position among the destination's pages ({exc}). "
+            "Reorder the pages in the Docmost web UI, or pass an explicit "
+            "--position key.",
+            exit_code=1,
+        )
 
 
 def get_page_content(client: DocmostClient, page_id: str) -> dict[str, Any]:
@@ -356,16 +526,24 @@ def get_page_children(
     page_id: str,
     *,
     space_id: str | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
 ) -> dict[str, Any]:
-    """List direct child pages.
+    """List direct child pages (one page of results).
 
-    Uses /pages/sidebar-pages with pageId (works on Community edition).
+    Uses /pages/sidebar-pages with pageId (works on Community edition), which
+    merges PaginationOptions into the same request body. Without an explicit
+    limit the server returns only its default page size (20), so callers that
+    need every child should use get_all_page_children().
+
     If space_id is not provided, resolves it from the page's metadata.
 
     Args:
         client: Authenticated Docmost client.
         page_id: Parent page UUID.
         space_id: Space UUID (resolved from page info if not provided).
+        limit: Max results per request.
+        cursor: Pagination cursor.
 
     Returns:
         Raw API response dict.
@@ -373,7 +551,47 @@ def get_page_children(
     if not space_id:
         info = get_page_info(client, page_id)
         space_id = info.get("spaceId", "")
-    return client.post("/pages/sidebar-pages", json={"spaceId": space_id, "pageId": page_id})
+    body = build_body({"spaceId": space_id, "pageId": page_id}, limit=limit, cursor=cursor)
+    return client.post("/pages/sidebar-pages", json=body)
+
+
+def get_all_page_children(
+    client: DocmostClient,
+    page_id: str,
+    *,
+    space_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List every direct child page, following pagination.
+
+    Args:
+        client: Authenticated Docmost client.
+        page_id: Parent page UUID.
+        space_id: Space UUID (resolved from page info if not provided).
+
+    Returns:
+        List of child page dicts.
+    """
+    from docmost_cli.api.pagination import paginate_all
+
+    if not space_id:
+        info = get_page_info(client, page_id)
+        space_id = info.get("spaceId", "")
+    return paginate_all(get_page_children, client=client, page_id=page_id, space_id=space_id).items
+
+
+def get_all_sidebar_pages(client: DocmostClient, space_id: str) -> list[dict[str, Any]]:
+    """List every root-level page in a space, following pagination.
+
+    Args:
+        client: Authenticated Docmost client.
+        space_id: Space UUID.
+
+    Returns:
+        List of root page dicts.
+    """
+    from docmost_cli.api.pagination import paginate_all
+
+    return paginate_all(get_sidebar_pages, client=client, space_id=space_id).items
 
 
 def get_page_history(
@@ -427,19 +645,28 @@ def export_page(client: DocmostClient, page_id: str, fmt: str = "md") -> str:
         return zf.read(names[0]).decode("utf-8")
 
 
-def get_sidebar_pages(client: DocmostClient, space_id: str) -> dict[str, Any]:
-    """Get page tree structure for a space.
+def get_sidebar_pages(
+    client: DocmostClient,
+    space_id: str,
+    *,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    """Get one page of root-level pages for a space.
 
     Returns nested structure with children arrays, used for --tree view.
 
     Args:
         client: Authenticated Docmost client.
         space_id: Space UUID.
+        limit: Max results per request.
+        cursor: Pagination cursor.
 
     Returns:
         Raw API response dict with nested page tree.
     """
-    return client.post("/pages/sidebar-pages", json={"spaceId": space_id})
+    body = build_body({"spaceId": space_id}, limit=limit, cursor=cursor)
+    return client.post("/pages/sidebar-pages", json=body)
 
 
 def import_page(
@@ -487,10 +714,7 @@ def build_page_tree(
     Returns:
         List of page dicts with populated children arrays.
     """
-    from docmost_cli.api.pagination import extract_items
-
-    result = get_sidebar_pages(client, space_id)
-    pages = extract_items(result)
+    pages = get_all_sidebar_pages(client, space_id)
 
     for page in pages:
         _fill_children(client, page, space_id=space_id, depth=0, max_depth=max_depth)
@@ -515,10 +739,7 @@ def _fill_children(
     # If sidebar returned empty children, fetch via sidebar-pages with pageId
     if not children and page.get("hasChildren", False):
         try:
-            from docmost_cli.api.pagination import extract_items
-
-            result = get_page_children(client, page["id"], space_id=space_id)
-            children = extract_items(result)
+            children = get_all_page_children(client, page["id"], space_id=space_id)
             page["children"] = children
         except SystemExit as exc:
             if exc.code not in (4,):

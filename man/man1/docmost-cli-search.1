@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-search(1)
 .\" Source: SPECIFICATION.md section 4.5, src/docmost_cli/cli/search.py
-.TH DOCMOST\-CLI\-SEARCH 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI\-SEARCH 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli\-search \- full\-text search across a Docmost wiki
 .SH SYNOPSIS
@@ -29,8 +29,17 @@ is the search string.
 Restrict search to a specific space.
 .TP
 .BI \-\-limit " N"
-Maximum number of results.
-Default: 20.
+Maximum total number of results across all pages.
+When omitted, every page is retrieved.
+.TP
+.BI \-\-page\-size " N"
+Results per request, 1\-100. Default: 100.
+.TP
+.BI \-\-cursor " cursor"
+Fetch a single page of results starting at this cursor.
+.TP
+.B \-\-no\-follow
+Fetch a single page of results instead of following pagination.
 .TP
 .BI \-\-type " type"
 Filter results by type:
@@ -40,6 +49,11 @@ or
 .TP
 .B \-\-json
 Output as a JSON array instead of a Rich table.
+.TP
+.B \-\-envelope
+With
+.BR \-\-json ,
+include pagination metadata.
 .PP
 Table columns: id, title, highlight.
 .SH EXAMPLES

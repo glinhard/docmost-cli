@@ -7,6 +7,7 @@ and session cache at ~/.cache/docmost-cli/session.json.
 import os
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import tomli_w
 
@@ -48,7 +49,7 @@ def get_cache_dir() -> Path:
     return base / APP_NAME
 
 
-def read_config(config_path: Path | None = None) -> dict[str, dict[str, str]]:
+def read_config(config_path: Path | None = None) -> dict[str, dict[str, Any]]:
     """Read the full TOML config, returning all profiles.
 
     Args:
@@ -64,7 +65,7 @@ def read_config(config_path: Path | None = None) -> dict[str, dict[str, str]]:
         return tomllib.load(f)
 
 
-def read_profile(profile: str = "default", config_path: Path | None = None) -> dict[str, str]:
+def read_profile(profile: str = "default", config_path: Path | None = None) -> dict[str, Any]:
     """Read a specific profile from the config file.
 
     Args:
@@ -78,7 +79,7 @@ def read_profile(profile: str = "default", config_path: Path | None = None) -> d
     return config.get(profile, {})
 
 
-def write_config(config: dict[str, dict[str, str]], config_path: Path | None = None) -> None:
+def write_config(config: dict[str, dict[str, Any]], config_path: Path | None = None) -> None:
     """Write the full config dict to the TOML file.
 
     Creates parent directories if needed. Writes atomically via temp file.
@@ -97,7 +98,7 @@ def write_config(config: dict[str, dict[str, str]], config_path: Path | None = N
 
 def set_config_value(
     key: str,
-    value: str,
+    value: str | bool,
     profile: str = "default",
     config_path: Path | None = None,
 ) -> None:
@@ -119,7 +120,7 @@ def set_config_value(
 def load_settings(
     profile: str = "default",
     config_path: Path | None = None,
-    cli_overrides: dict[str, str] | None = None,
+    cli_overrides: dict[str, Any] | None = None,
 ) -> DocmostSettings:
     """Load settings with full priority chain.
 
@@ -143,18 +144,22 @@ def load_settings(
     settings = DocmostSettings()
 
     # Step 2: Fill in config file values only where env didn't set a value.
-    updates: dict[str, str] = {}
+    # `model_fields_set` is the reliable test: a sentinel check like
+    # `getattr(...) is None` would never fire for a bool field defaulting to
+    # False, silently ignoring the config file.
+    updates: dict[str, Any] = {}
     for key, value in file_values.items():
-        if key in DocmostSettings.model_fields and getattr(settings, key) is None:
+        if key in DocmostSettings.model_fields and key not in settings.model_fields_set:
             updates[key] = value
     updates["profile"] = profile
-    if updates:
-        settings = settings.model_copy(update=updates)
 
     # Step 3: CLI overrides beat everything.
     if cli_overrides:
-        non_none = {k: v for k, v in cli_overrides.items() if v is not None}
-        if non_none:
-            settings = settings.model_copy(update=non_none)
+        updates.update({k: v for k, v in cli_overrides.items() if v is not None})
+
+    if updates:
+        # Re-validate rather than model_copy(update=...) so a TOML or CLI
+        # string like "true" is coerced to the field's declared type.
+        settings = DocmostSettings.model_validate({**settings.model_dump(), **updates})
 
     return settings

@@ -6,6 +6,8 @@ from docmost_cli.output.formatter import (
     print_error,
     print_key_value,
     print_result,
+    print_table,
+    print_warning,
 )
 
 __all__ = [
@@ -14,4 +16,6 @@ __all__ = [
     "print_error",
     "print_key_value",
     "print_result",
+    "print_table",
+    "print_warning",
 ]

@@ -90,6 +90,37 @@ class TestSessionAuth:
         assert auth2._token is None
 
 
+class TestSessionAuthNoCache:
+    """With use_cache=False the JWT must never touch disk."""
+
+    def test_does_not_read_existing_cache(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        seeded = SessionAuth("https://example.com", "user@test.com", "pass")
+        seeded._token = "cached_jwt"
+        seeded._save_cached_token()
+
+        auth = SessionAuth("https://example.com", "user@test.com", "pass", use_cache=False)
+        assert auth._token is None
+
+    def test_does_not_write_cache(self, tmp_path, monkeypatch, httpx_mock) -> None:
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        httpx_mock.add_response(
+            url="https://example.com/api/auth/login",
+            json={"token": "jwt_test_token"},
+        )
+        auth = SessionAuth("https://example.com", "user@test.com", "pass", use_cache=False)
+        client = httpx.Client()
+        auth.refresh(client)
+        client.close()
+
+        assert not (tmp_path / "docmost-cli" / "session.json").exists()
+
+        # The token still works in memory for this process.
+        request = httpx.Request("GET", "https://example.com/api/pages/info")
+        auth.apply(request)
+        assert request.headers["Authorization"] == "Bearer jwt_test_token"
+
+
 class TestCreateAuth:
     def test_api_key_preferred(self) -> None:
         settings = DocmostSettings(
@@ -127,3 +158,26 @@ class TestCreateAuth:
         settings = DocmostSettings(email="user@test.com", password="pass")
         with pytest.raises(AuthError, match="URL is required"):
             create_auth(settings)
+
+    def test_no_session_cache_is_threaded_through(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        settings = DocmostSettings(
+            url="https://example.com",
+            email="user@test.com",
+            password="pass",
+            no_session_cache=True,
+        )
+        auth = create_auth(settings)
+        assert isinstance(auth, SessionAuth)
+        assert auth._use_cache is False
+
+    def test_session_cache_on_by_default(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        settings = DocmostSettings(
+            url="https://example.com",
+            email="user@test.com",
+            password="pass",
+        )
+        auth = create_auth(settings)
+        assert isinstance(auth, SessionAuth)
+        assert auth._use_cache is True

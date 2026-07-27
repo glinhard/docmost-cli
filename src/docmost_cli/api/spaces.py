@@ -9,6 +9,7 @@ from docmost_cli.output.formatter import print_error
 __all__ = [
     "create_space",
     "get_space_info",
+    "list_all_spaces",
     "list_spaces",
     "resolve_space_id",
     "update_space",
@@ -60,8 +61,25 @@ def get_space_info(
     print_error("Either slug or space_id is required.", exit_code=1)
 
 
+def list_all_spaces(client: DocmostClient) -> list[dict[str, Any]]:
+    """List every space, following pagination.
+
+    Args:
+        client: Authenticated Docmost client.
+
+    Returns:
+        List of space dicts.
+    """
+    from docmost_cli.api.pagination import paginate_all
+
+    return paginate_all(list_spaces, client=client).items
+
+
 def _find_space_by_slug(client: DocmostClient, slug: str) -> dict[str, Any]:
     """Find a space by slug from the spaces list.
+
+    Follows pagination lazily and returns as soon as the slug matches, so a
+    workspace with hundreds of spaces costs only as many requests as needed.
 
     Args:
         client: Authenticated Docmost client.
@@ -70,11 +88,9 @@ def _find_space_by_slug(client: DocmostClient, slug: str) -> dict[str, Any]:
     Returns:
         Space info dict.
     """
-    from docmost_cli.api.pagination import extract_items
+    from docmost_cli.api.pagination import paginate_iter
 
-    result = list_spaces(client)
-    items = extract_items(result)
-    for space in items:
+    for space in paginate_iter(list_spaces, client=client):
         if space.get("slug") == slug:
             return space
     print_error(f"Space '{slug}' not found.", exit_code=4)

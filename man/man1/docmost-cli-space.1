@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-space(1)
 .\" Source: SPECIFICATION.md section 4.3, src/docmost_cli/cli/space.py
-.TH DOCMOST\-CLI\-SPACE 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI\-SPACE 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli\-space \- manage Docmost wiki spaces
 .SH SYNOPSIS
@@ -28,8 +28,31 @@ Each space has a unique slug used to identify it in CLI commands.
 .SS list
 List all spaces in the workspace.
 .TP
+.BI \-\-limit " N"
+Maximum total number of results across all pages.
+When omitted, every page is retrieved.
+.TP
+.BI \-\-page\-size " N"
+Results per request, 1\-100. Default: 100.
+.TP
+.BI \-\-cursor " cursor"
+Fetch a single page of results starting at this cursor.
+.TP
+.B \-\-no\-follow
+Fetch a single page of results instead of following pagination.
+.TP
 .B \-\-json
 Output as a JSON array instead of a Rich table.
+.TP
+.B \-\-envelope
+With
+.BR \-\-json ,
+wrap the results as
+.B {"items": [...], "meta": {...}}
+so the caller can read
+.B hasNextPage
+and
+.BR nextCursor .
 .PP
 Table columns: id, name, slug, description.
 .SS create

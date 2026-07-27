@@ -126,3 +126,38 @@ class TestLoadSettings:
         settings = load_settings(profile="staging", config_path=config_path)
         assert settings.url == "https://staging.com"
         assert settings.profile == "staging"
+
+
+class TestLoadSettingsBoolFields:
+    """A bool field defaulting to False must still be settable from the config file."""
+
+    @staticmethod
+    def _write(tmp_path: Path, body: str) -> Path:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(body)
+        return config_path
+
+    def test_bool_from_config_file(self, tmp_path: Path) -> None:
+        path = self._write(tmp_path, "[default]\nno_session_cache = true\n")
+        assert load_settings(config_path=path).no_session_cache is True
+
+    def test_bool_string_from_config_file_is_coerced(self, tmp_path: Path) -> None:
+        path = self._write(tmp_path, '[default]\nno_session_cache = "true"\n')
+        assert load_settings(config_path=path).no_session_cache is True
+
+    def test_defaults_to_false(self, tmp_path: Path) -> None:
+        path = self._write(tmp_path, '[default]\nurl = "https://x.com"\n')
+        assert load_settings(config_path=path).no_session_cache is False
+
+    def test_env_beats_config_for_bool(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DOCMOST_NO_SESSION_CACHE", "false")
+        path = self._write(tmp_path, "[default]\nno_session_cache = true\n")
+        assert load_settings(config_path=path).no_session_cache is False
+
+    def test_cli_beats_env_for_bool(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DOCMOST_NO_SESSION_CACHE", "false")
+        path = self._write(tmp_path, '[default]\nurl = "https://x.com"\n')
+        settings = load_settings(config_path=path, cli_overrides={"no_session_cache": True})
+        assert settings.no_session_cache is True

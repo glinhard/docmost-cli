@@ -1,6 +1,6 @@
 .\" Manual page for docmost-cli-workspace(1)
 .\" Source: SPECIFICATION.md section 4.7, src/docmost_cli/cli/workspace.py
-.TH DOCMOST\-CLI\-WORKSPACE 1 "2026\-03\-22" "docmost\-cli 0.4.0" "User Commands"
+.TH DOCMOST\-CLI\-WORKSPACE 1 "2026\-03\-22" "docmost\-cli 0.5.0" "User Commands"
 .SH NAME
 docmost\-cli\-workspace \- Docmost workspace information
 .SH SYNOPSIS
@@ -23,10 +23,25 @@ Displays key\-value pairs: name, id, description, memberCount, createdAt.
 List workspace members.
 .TP
 .BI \-\-limit " N"
-Maximum number of members to return.
+Maximum total number of members across all pages.
+When omitted, every page is retrieved.
+.TP
+.BI \-\-page\-size " N"
+Results per request, 1\-100. Default: 100.
+.TP
+.BI \-\-cursor " cursor"
+Fetch a single page of results starting at this cursor.
+.TP
+.B \-\-no\-follow
+Fetch a single page of results instead of following pagination.
 .TP
 .B \-\-json
 Output as a JSON array instead of a Rich table.
+.TP
+.B \-\-envelope
+With
+.BR \-\-json ,
+include pagination metadata.
 .PP
 Table columns: id, email, name, role.
 .SH EXAMPLES

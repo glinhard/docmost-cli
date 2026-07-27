@@ -70,10 +70,22 @@ config/  → standalone                      (no dependencies except pydantic)
 
 - **Auth auto-detection**: Check for `api_key` first, then fall back to `email`+`password`
 - **ProseMirror content**: Always convert to Markdown for display; use `--raw` for JSON
-- **Pagination**: Cursor-based. Auto-follow until exhausted unless `--limit` is set
+- **Pagination**: Cursor-based, at `data.meta.nextCursor` (**not** `data.cursor`).
+  List commands auto-follow until `hasNextPage` is false. `--limit` caps the
+  total across pages; `--page-size` sets the per-request size (server max 100);
+  `--cursor`/`--no-follow` fetch a single page. Go through
+  `cli/_list_opts.py`'s `fetch_list`/`emit_list` rather than calling the API
+  function directly
 - **Error handling**: Catch `httpx` exceptions → translate to user-friendly messages via `rich`
 - **Confirmations**: Destructive operations prompt unless `--yes` / `-y` is passed
 - **Page creation**: Prefer the import endpoint (server-side MD→ProseMirror) over client-side conversion
+- **Page content updates**: `POST /pages/update` with `{content, format: "markdown", operation}`.
+  The server does the Yjs write — never build a WebSocket/CRDT client. Requires
+  Docmost v0.71+; older servers silently strip the field, so check that the
+  returned `content` is a `str`, never trust the 200
+- **Page positions**: `POST /pages/move` requires a 5-12 char base62 fractional
+  index. Use `api/position.py`'s `generate_key_between` via
+  `resolve_position()` — never hardcode a key
 
 ### Output Strategy (no global `--json` flag)
 
@@ -85,6 +97,7 @@ Each command category uses the format that fits its data shape:
 | **Content** (`page get`) | Raw Markdown | nothing | `docmost-cli page get abc123 > page.md` |
 | **Content + meta** (`page get --meta`) | YAML frontmatter + Markdown | nothing | Parseable by any frontmatter tool |
 | **Lists** (`page list`, `search`, ...) | Rich table (default) or JSON array (`--json`) | nothing | `docmost-cli page list eng --json \| jq` |
+| **Lists + pagination meta** (`--json --envelope`) | `{"items": [...], "meta": {...}}` | nothing | `... --no-follow --json --envelope \| jq .meta` |
 | **Writes** (`page create`, `delete`, ...) | Resource ID only | Confirmation message | `ID=$(docmost-cli page create ...)` |
 | **Sync status** (`sync status`) | Change summary | nothing | `docmost-cli sync status eng` |
 | **Sync push dry-run** (`sync push --dry-run`) | Action plan | nothing | `docmost-cli sync push eng --dry-run` |

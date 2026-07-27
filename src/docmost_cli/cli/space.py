@@ -2,15 +2,25 @@
 
 import typer
 
-from docmost_cli.api.pagination import extract_id, extract_items
+from docmost_cli.api.pagination import extract_id
 from docmost_cli.api.spaces import (
     create_space,
     list_spaces,
     resolve_space_id,
     update_space,
 )
+from docmost_cli.cli._list_opts import (
+    cursor_option,
+    emit_list,
+    envelope_option,
+    fetch_list,
+    json_option,
+    limit_option,
+    no_follow_option,
+    page_size_option,
+)
 from docmost_cli.cli.main import get_client
-from docmost_cli.output.formatter import print_error, print_result, print_table
+from docmost_cli.output.formatter import print_error, print_result
 
 __all__ = ["space_app"]
 
@@ -19,14 +29,25 @@ space_app = typer.Typer(name="space", help="Space operations.")
 
 @space_app.command("list")
 def space_list_cmd(
-    json_mode: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    limit: int | None = limit_option(),
+    page_size: int | None = page_size_option(),
+    cursor: str | None = cursor_option(),
+    no_follow: bool = no_follow_option(),
+    json_mode: bool = json_option(),
+    envelope: bool = envelope_option(),
 ) -> None:
     """List all spaces."""
     client = get_client()
-    result = list_spaces(client)
-    items = extract_items(result)
+    result = fetch_list(
+        list_spaces,
+        limit=limit,
+        page_size=page_size,
+        cursor=cursor,
+        no_follow=no_follow,
+        client=client,
+    )
     columns = ["id", "name", "slug", "description"]
-    print_table(items, columns, json_mode=json_mode)
+    emit_list(result, columns, json_mode=json_mode, envelope=envelope)
 
 
 @space_app.command("create")

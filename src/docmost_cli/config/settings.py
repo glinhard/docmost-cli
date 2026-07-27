@@ -21,3 +21,6 @@ class DocmostSettings(BaseSettings):
     email: str | None = None
     password: str | None = None
     profile: str = "default"
+    # When true, the session JWT stays in memory and is never read from or
+    # written to ~/.cache/docmost-cli/session.json.
+    no_session_cache: bool = False

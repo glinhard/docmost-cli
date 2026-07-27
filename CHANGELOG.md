@@ -1,5 +1,87 @@
 # Changelog
 
+## 0.5.0 (2026-07-26)
+
+Fixes six gaps reported against Docmost Community 0.95, verified against the
+upstream v0.95.0 server source.
+
+### Behavior changes
+
+- **List commands now return every result.** Pagination is followed
+  automatically instead of stopping at the server's first page. `--limit` is now
+  a cap on the *total* across pages rather than a per-request limit, so
+  `--limit 200` fetches two pages of 100 instead of failing with HTTP 400.
+- **`sync push` no longer recreates pages silently.** On a server too old to
+  update content in place it aborts with an explanation; pass `--allow-recreate`
+  to opt into the old delete+recreate behavior, which prints a warning naming the
+  affected page count.
+- **`page move --position` takes `first`, `last`, or an ordering key** instead of
+  an integer, and defaults to `first`. `POSITION_FIRST` (`"aaaaa"`) is gone — it
+  never meant "first" anyway: in ASCII `'a' > '0'`, so it sorted *after* every key
+  Docmost's own generator produces.
+- `move_page()`'s `position` argument is now required (the server requires it).
+
+### Fixed
+
+- **Pagination metadata was silently discarded.** `get_cursor()` looked for
+  `data.cursor`, but Docmost returns `data.meta.nextCursor`, so it returned `None`
+  every time — which is why the auto-follow documented since 0.2.0 never actually
+  ran and `--cursor` was a write-only flag.
+- **`page children` capped at 20.** It sent no `limit` or `cursor` to
+  `/pages/sidebar-pages` and got the server default.
+- **`page move --parent` returned HTTP 400 without `--position`.** Docmost's
+  `MovePageDto` declares `position` as required (`@MinLength(5) @MaxLength(12)`);
+  the CLI dropped it from the body when unset.
+- **Content updates failed with a misleading message.** The CLI POSTed to
+  `/pages/content/update`, an endpoint that does not exist in Docmost, and read
+  the 404 as an Enterprise-only restriction. Content now goes through
+  `POST /pages/update`, which Docmost applies server-side through its
+  collaboration gateway. The page keeps its ID, slug, history, comments and
+  inbound links — no WebSocket or Yjs client needed. Requires Docmost v0.71+.
+- **Space slug resolution failed past the first page of spaces**, reporting a
+  misleading `Space '<slug>' not found.` Now follows pagination, stopping at the
+  first match.
+- **`sync pull` fetched an incomplete tree** on spaces with more root pages or
+  children than one server page, silently producing a partial local copy.
+- **`sync push` lost the manifest when a phase aborted**, so the next push
+  re-created every already-created page as a duplicate. The manifest is now saved
+  in a `finally` block.
+- `update_page_content` only intercepted HTTP 404; a 405 or 403 fell through to a
+  bare "Unexpected error".
+
+### Added
+
+- `--version` / `-V` and a `version` subcommand. With `--verbose`, `version` also
+  reports the Python version and platform. The version now has a single source of
+  truth (`src/docmost_cli/__init__.py`), with `pyproject.toml` deriving it.
+- `--no-session-cache` global flag, `DOCMOST_NO_SESSION_CACHE` environment
+  variable and `no_session_cache` config key: the session JWT stays in memory and
+  is never read from or written to `~/.cache/docmost-cli/session.json`.
+- `docmost-cli config logout` deletes an existing cached session token.
+- `--limit`, `--page-size`, `--cursor`, `--no-follow` and `--envelope` on all
+  eight list commands. `--json` still emits a bare array; `--envelope` wraps it as
+  `{"items": [...], "meta": {...}}` carrying `hasNextPage` and `nextCursor`.
+- `page update --append` / `--prepend`.
+- `page move --root` to move a nested page to the space root.
+- `page list --tree --json` outputs the nested tree as JSON (it was previously
+  ignored).
+- `api/position.py`: base62 fractional indexing ported from the reference
+  algorithm, with jitter to satisfy Docmost's 5-character minimum. Keys stay valid
+  for Docmost's own JS generator, so dragging a sibling next to a CLI-placed page
+  in the web editor still works.
+- `models/common.py`: `PaginationMeta` and `PaginatedResult` pydantic models.
+- Guards against a server that ignores `cursor`: pagination stops when a cursor or
+  a page repeats, and warns, rather than looping forever.
+
+### Changed
+
+- `--tree` now rejects the pagination flags instead of silently ignoring them.
+- `print_table()` gained a keyword-only `meta` argument; `print_table` and the new
+  `print_warning` are exported from `docmost_cli.output`.
+- Corrected `SPECIFICATION.md` §5.2/§5.3 (response envelope shape, `/pages/move`
+  requirements, the non-existent content endpoint) and the `--position` docs in
+  the man pages. A new doc test keeps the man-page `.TH` versions in sync.
+
 ## 0.4.0 (2026-03-22)
 
 - Add `sync pull` command: download all pages from a space to local Markdown files with YAML frontmatter

@@ -62,14 +62,27 @@ class SessionAuth(AuthStrategy):
 
     Authenticates via POST /api/auth/login, extracts JWT from the response,
     and caches it in ~/.cache/docmost-cli/session.json.
+
+    With ``use_cache=False`` the JWT is never read from or written to disk; it
+    lives only in memory for the lifetime of the process. Use this where
+    credential policy forbids additional on-disk token caches.
     """
 
-    def __init__(self, url: str, email: str, password: str) -> None:
+    def __init__(
+        self,
+        url: str,
+        email: str,
+        password: str,
+        *,
+        use_cache: bool = True,
+    ) -> None:
         self._url = url.rstrip("/")
         self._email = email
         self._password = password
         self._token: str | None = None
-        self._load_cached_token()
+        self._use_cache = use_cache
+        if use_cache:
+            self._load_cached_token()
 
     def _cache_path(self) -> Path:
         """Return the path to the session cache file."""
@@ -89,7 +102,7 @@ class SessionAuth(AuthStrategy):
 
     def _save_cached_token(self) -> None:
         """Save the current JWT to the cache file."""
-        if not self._token:
+        if not self._use_cache or not self._token:
             return
         cache = self._cache_path()
         cache.parent.mkdir(parents=True, exist_ok=True)
@@ -193,7 +206,12 @@ def create_auth(settings: DocmostSettings) -> AuthStrategy:
     if settings.email and settings.password:
         if not settings.url:
             raise AuthError("URL is required for session authentication.")
-        return SessionAuth(settings.url, settings.email, settings.password)
+        return SessionAuth(
+            settings.url,
+            settings.email,
+            settings.password,
+            use_cache=not settings.no_session_cache,
+        )
 
     raise AuthError(
         "No authentication configured. "

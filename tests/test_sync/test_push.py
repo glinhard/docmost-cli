@@ -23,7 +23,7 @@ from docmost_cli.sync.manifest import (
 )
 from docmost_cli.sync.push import (
     PushResult,
-    _community_replace,
+    _recreate_page,
     _topological_sort,
     push_space,
 )
@@ -95,6 +95,14 @@ def _mock_resolve_space(httpx_mock, slug: str = "eng") -> None:
     httpx_mock.add_response(
         url=f"{_TEST_URL}/api/spaces",
         json={"data": {"items": [{"id": FAKE_SPACE_ID, "slug": slug, "name": slug.capitalize()}]}},
+    )
+
+
+def _mock_siblings(httpx_mock, items: list[dict] | None = None) -> None:
+    """Add mock for resolve_position's sibling read (POST /pages/sidebar-pages)."""
+    httpx_mock.add_response(
+        url=f"{_TEST_URL}/api/pages/sidebar-pages",
+        json={"data": {"items": items or [], "meta": {"hasNextPage": False}}},
     )
 
 
@@ -198,23 +206,33 @@ class TestTopologicalSort:
 # ---------------------------------------------------------------------------
 
 
-class TestTryEnterpriseUpdate:
+class TestTryUpdatePageContent:
     """Tests for try_update_page_content probing."""
 
     def test_success(self, httpx_mock) -> None:
-        """Returns True when Enterprise endpoint succeeds."""
+        """Returns True when the server echoes Markdown content back."""
         httpx_mock.add_response(
-            url=f"{_TEST_URL}/api/pages/content/update",
-            json={"data": {"id": FAKE_PAGE_ID}},
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": FAKE_PAGE_ID, "content": "new content"}},
         )
         with _make_client() as client:
             result = try_update_page_content(client, page_id=FAKE_PAGE_ID, content="new content")
         assert result is True
 
-    def test_failure_404(self, httpx_mock) -> None:
-        """Returns False when endpoint returns 404."""
+    def test_failure_when_content_stripped(self, httpx_mock) -> None:
+        """Returns False when a pre-v0.71 server strips `content` and `format`."""
         httpx_mock.add_response(
-            url=f"{_TEST_URL}/api/pages/content/update",
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": FAKE_PAGE_ID, "content": {"type": "doc", "content": []}}},
+        )
+        with _make_client() as client:
+            result = try_update_page_content(client, page_id=FAKE_PAGE_ID, content="content")
+        assert result is False
+
+    def test_failure_http_error(self, httpx_mock) -> None:
+        """Returns False when the request itself fails."""
+        httpx_mock.add_response(
+            url=f"{_TEST_URL}/api/pages/update",
             status_code=404,
         )
         with _make_client() as client:
@@ -223,12 +241,12 @@ class TestTryEnterpriseUpdate:
 
 
 # ---------------------------------------------------------------------------
-# _community_replace — integration test
+# _recreate_page — integration test
 # ---------------------------------------------------------------------------
 
 
-class TestCommunityUpdate:
-    """Tests for _community_replace create-then-delete."""
+class TestRecreatePage:
+    """Tests for _recreate_page create-then-delete."""
 
     def test_create_then_delete(self, httpx_mock) -> None:
         """Creates new page, then deletes old one. Returns new ID."""
@@ -239,24 +257,26 @@ class TestCommunityUpdate:
             url=f"{_TEST_URL}/api/pages/import",
             json={"id": new_page_id},
         )
-        # 2. move_page -> POST /pages/move (because parent_id is set)
+        # 2. resolve_position -> POST /pages/sidebar-pages (read the siblings)
+        _mock_siblings(httpx_mock)
+        # 3. move_page -> POST /pages/move (because parent_id is set)
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/move",
             json={"data": {"id": new_page_id}},
         )
-        # 3. update_page_meta -> POST /pages/update (because icon is set)
+        # 4. update_page_meta -> POST /pages/update (because icon is set)
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/update",
             json={"data": {"id": new_page_id}},
         )
-        # 4. delete_page -> POST /pages/delete
+        # 5. delete_page -> POST /pages/delete
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/delete",
             json={"data": {}},
         )
 
         with _make_client() as client:
-            result_id = _community_replace(
+            result_id = _recreate_page(
                 client,
                 space_id=FAKE_SPACE_ID,
                 old_page_id=FAKE_PAGE_ID,
@@ -272,9 +292,10 @@ class TestCommunityUpdate:
         requests = httpx_mock.get_requests()
         urls = [str(r.url) for r in requests]
         assert f"{_TEST_URL}/api/pages/import" in urls[0]
-        assert f"{_TEST_URL}/api/pages/move" in urls[1]
-        assert f"{_TEST_URL}/api/pages/update" in urls[2]
-        assert f"{_TEST_URL}/api/pages/delete" in urls[3]
+        assert f"{_TEST_URL}/api/pages/sidebar-pages" in urls[1]
+        assert f"{_TEST_URL}/api/pages/move" in urls[2]
+        assert f"{_TEST_URL}/api/pages/update" in urls[3]
+        assert f"{_TEST_URL}/api/pages/delete" in urls[4]
 
     def test_no_parent_no_icon(self, httpx_mock) -> None:
         """Skips move and icon update when not needed."""
@@ -290,7 +311,7 @@ class TestCommunityUpdate:
         )
 
         with _make_client() as client:
-            result_id = _community_replace(
+            result_id = _recreate_page(
                 client,
                 space_id=FAKE_SPACE_ID,
                 old_page_id=FAKE_PAGE_ID,
@@ -429,6 +450,7 @@ class TestPushNewPage:
             url=f"{_TEST_URL}/api/pages/import",
             json={"id": new_page_id},
         )
+        _mock_siblings(httpx_mock)
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/move",
             json={"data": {"id": new_page_id}},
@@ -446,42 +468,41 @@ class TestPushNewPage:
 
 
 # ---------------------------------------------------------------------------
-# push_space — content update (Enterprise)
+# push_space — content update
 # ---------------------------------------------------------------------------
 
 
-class TestPushContentUpdateEnterprise:
-    """push_space uses Enterprise endpoint when available."""
+def _setup_content_change(tmp_path: Path) -> Path:
+    """Create a synced dir whose single page has locally-modified content."""
+    old_body = "Old content.\n"
+    new_body = "Updated content.\n"
+    target = _setup_synced_dir(
+        tmp_path,
+        pages={
+            FAKE_PAGE_ID: build_page_entry(
+                title="My Page",
+                filename="my-page.md",
+                parent_id=None,
+                icon="",
+                content_hash=compute_content_hash(old_body),
+            )
+        },
+    )
+    _write_page(target, "my-page.md", page_id=FAKE_PAGE_ID, title="My Page", body=new_body)
+    return target
 
-    def test_enterprise_content_update(self, httpx_mock, tmp_path: Path) -> None:
-        old_body = "Old content.\n"
+
+class TestPushContentUpdate:
+    """push_space updates content in place, preserving the page ID."""
+
+    def test_native_update_preserves_id(self, httpx_mock, tmp_path: Path) -> None:
+        target = _setup_content_change(tmp_path)
         new_body = "Updated content.\n"
 
-        target = _setup_synced_dir(
-            tmp_path,
-            pages={
-                FAKE_PAGE_ID: build_page_entry(
-                    title="My Page",
-                    filename="my-page.md",
-                    parent_id=None,
-                    icon="",
-                    content_hash=compute_content_hash(old_body),
-                )
-            },
-        )
-        _write_page(
-            target,
-            "my-page.md",
-            page_id=FAKE_PAGE_ID,
-            title="My Page",
-            body=new_body,
-        )
-
         _mock_resolve_space(httpx_mock)
-        # Enterprise endpoint succeeds
         httpx_mock.add_response(
-            url=f"{_TEST_URL}/api/pages/content/update",
-            json={"data": {"id": FAKE_PAGE_ID}},
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": FAKE_PAGE_ID, "content": new_body}},
         )
 
         with _make_client() as client:
@@ -490,72 +511,61 @@ class TestPushContentUpdateEnterprise:
         assert result.updated == 1
         assert result.id_remaps == {}
 
-        # Manifest should be updated with new hash
+        urls = [str(r.url) for r in httpx_mock.get_requests()]
+        assert not any("/pages/import" in url for url in urls)
+        assert not any("/pages/delete" in url for url in urls)
+
         manifest = load_manifest(target)
         assert manifest["pages"][FAKE_PAGE_ID]["content_hash"] == compute_content_hash(new_body)
 
-
-# ---------------------------------------------------------------------------
-# push_space — content update (Community create-then-delete)
-# ---------------------------------------------------------------------------
-
-
-class TestPushContentUpdateCommunity:
-    """push_space falls back to create-then-delete on Community edition."""
-
-    def test_community_fallback(self, httpx_mock, tmp_path: Path) -> None:
-        old_body = "Old content.\n"
-        new_body = "Updated content.\n"
-        new_page_id = "replacement-page-id"
-
-        target = _setup_synced_dir(
-            tmp_path,
-            pages={
-                FAKE_PAGE_ID: build_page_entry(
-                    title="My Page",
-                    filename="my-page.md",
-                    parent_id=None,
-                    icon="",
-                    content_hash=compute_content_hash(old_body),
-                )
-            },
-        )
-        _write_page(
-            target,
-            "my-page.md",
-            page_id=FAKE_PAGE_ID,
-            title="My Page",
-            body=new_body,
-        )
+    def test_aborts_without_allow_recreate(self, httpx_mock, tmp_path: Path) -> None:
+        """A server that cannot apply content must not silently recreate pages."""
+        target = _setup_content_change(tmp_path)
 
         _mock_resolve_space(httpx_mock)
-        # Enterprise endpoint returns 404
         httpx_mock.add_response(
-            url=f"{_TEST_URL}/api/pages/content/update",
-            status_code=404,
-        )
-        # Community fallback: create via import
-        httpx_mock.add_response(
-            url=f"{_TEST_URL}/api/pages/import",
-            json={"id": new_page_id},
-        )
-        # delete old page
-        httpx_mock.add_response(
-            url=f"{_TEST_URL}/api/pages/delete",
-            json={"data": {}},
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": FAKE_PAGE_ID, "content": {"type": "doc", "content": []}}},
         )
 
+        with _make_client() as client, pytest.raises(SystemExit) as exc:
+            push_space(client, "eng", target)
+        assert exc.value.code == 1
+
+        urls = [str(r.url) for r in httpx_mock.get_requests()]
+        assert not any("/pages/delete" in url for url in urls)
+
+        # The manifest must survive the abort so the next push isn't a duplicate run.
+        manifest = load_manifest(target)
+        assert manifest is not None
+        assert FAKE_PAGE_ID in manifest["pages"]
+
+    def test_allow_recreate_falls_back_with_warning(
+        self, httpx_mock, tmp_path: Path, capsys
+    ) -> None:
+        target = _setup_content_change(tmp_path)
+        new_page_id = "replacement-page-id"
+
+        _mock_resolve_space(httpx_mock)
+        httpx_mock.add_response(
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": FAKE_PAGE_ID, "content": {"type": "doc", "content": []}}},
+        )
+        httpx_mock.add_response(url=f"{_TEST_URL}/api/pages/import", json={"id": new_page_id})
+        httpx_mock.add_response(url=f"{_TEST_URL}/api/pages/delete", json={"data": {}})
+
         with _make_client() as client:
-            result = push_space(client, "eng", target)
+            result = push_space(client, "eng", target, allow_recreate=True)
 
         assert result.updated == 1
         assert result.id_remaps == {FAKE_PAGE_ID: new_page_id}
 
-        # Verify file frontmatter has new ID
+        err = capsys.readouterr().err
+        assert "DELETE and RE-CREATE" in err
+
         meta, _ = read_sync_file(target / "my-page.md")
         assert meta["id"] == new_page_id
 
-        # Old ID should be gone from manifest, new ID present
         manifest = load_manifest(target)
         assert FAKE_PAGE_ID not in manifest["pages"]
         assert new_page_id in manifest["pages"]
@@ -682,6 +692,7 @@ class TestPushMoveOnly:
         )
 
         _mock_resolve_space(httpx_mock)
+        _mock_siblings(httpx_mock)
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/move",
             json={"data": {"id": FAKE_PAGE_ID}},
