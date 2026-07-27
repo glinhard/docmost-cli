@@ -36,6 +36,13 @@ ruff check src/ tests/
 ruff format src/ tests/
 ```
 
+CI (`.github/workflows/ci.yml`) runs the same gates on every push to `main` and
+every pull request: `pytest` on Python 3.11/3.12/3.13, and `ruff check`,
+`ruff format --check` and `mypy src/` once. `mypy` must stay at **zero** errors —
+`pyproject.toml` sets `strict = true`. A third job builds the sdist and wheel and
+asserts the built version matches `__version__` and that all ten man pages ship,
+since both are configured in `pyproject.toml` and fail silently otherwise.
+
 ## Code Style
 
 - Use type hints everywhere (Python 3.11+ syntax, e.g. `str | None` not `Optional[str]`)
