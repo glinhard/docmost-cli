@@ -189,11 +189,33 @@ jobs:
           print(body[:500])
           PY
 
-      - name: Create the release
+      - name: Create or update the release
+        # The tag can arrive two ways: `git push origin v0.6.0`, or the GitHub
+        # web UI's "Draft a new release" flow, which creates the tag *and* the
+        # release before this job runs. Handle both, so neither route ends in a
+        # red job.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file release-notes.md \
-            dist/*
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; attaching artifacts."
+            gh release upload "$tag" dist/* --clobber
+
+            # Only fill in notes if whoever created it left them empty —
+            # never overwrite notes a human wrote by hand.
+            if [ -z "$(gh release view "$tag" --json body --jq '.body' | tr -d '[:space:]')" ]; then
+              echo "Release body is empty; filling it from CHANGELOG.md."
+              gh release edit "$tag" --notes-file release-notes.md
+            else
+              echo "Release already has notes; leaving them alone."
+            fi
+          else
+            echo "Creating release $tag."
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes-file release-notes.md \
+              dist/*
+          fi
