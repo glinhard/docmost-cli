@@ -2,8 +2,25 @@
 
 ## 0.7.0 (unreleased)
 
-Nothing user-facing yet. The CLI behaves exactly as 0.6.0 did; the changes so
-far are to how the project is built and released.
+### Added
+
+- **`attachment upload <page-id> --file <path>`** — upload a file and attach it
+  to a page, closing the last "can the CLI do what the editor does" gap for
+  images. Contributed by [@amanpatel](https://github.com/amanpatel) in
+  [#1](https://github.com/glinhard/docmost-cli/pull/1).
+
+  It posts a multipart upload to `POST /files/upload`, the undocumented endpoint
+  the web editor itself uses, and prints the attachment ID to stdout with the
+  page-embeddable URL on stderr — so `ID=$(docmost-cli attachment upload ...)`
+  captures the ID alone, and the file can be embedded with
+  `![alt](/api/files/<id>/<filename>)`. The MIME type is guessed from the
+  filename and falls back to `application/octet-stream`.
+
+  Because the endpoint is undocumented, the response is read both bare and
+  inside the `{success, status, data}` envelope every other endpoint uses,
+  rather than betting on one shape. A response carrying no usable record is a
+  clear error rather than a traceback, and a filename is percent-escaped so it
+  cannot reshape the URL path.
 
 ### Changed
 

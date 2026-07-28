@@ -269,6 +269,8 @@ docmost-cli search <query>                        # Full-text search
 ```
 docmost-cli attachment search <query>             # Search attachments
   --space <space-slug>
+docmost-cli attachment upload <page-id>           # Upload a file to a page
+  --file <path>
 ```
 
 ### 4.8 `docmost-cli workspace`
@@ -480,6 +482,8 @@ POST /search              → {query, spaceId?, type?, limit?, cursor?}
 ```
 POST /attachments/search  → {query, spaceId?, limit?, cursor?}
 GET  /attachments/...     → file download
+POST /files/upload        → multipart {file, pageId} (undocumented; the endpoint
+                            the web editor uses for inline images/attachments)
 ```
 
 **Workspace:**
@@ -805,7 +809,7 @@ def print_error(message: str, exit_code: int = 1) -> NoReturn:
 - [x] `docmost-cli page duplicate` / `page copy`
 - [x] `docmost-cli page children` (with `--json`) / `page history` (with `--json`)
 - [x] `docmost-cli page export` / `page import`
-- [x] `docmost-cli attachment search`
+- [x] `docmost-cli attachment search` / `attachment upload`
 - [x] `docmost-cli workspace` / `docmost-cli user`
 - [x] Tree view (`--tree`) for page listing
 - [x] Pagination auto-follow for full listings
@@ -983,8 +987,14 @@ These items need investigation during implementation. Update this section as ans
       'page.<id>', …)` — **the server performs the Yjs write**. REST is
       sufficient; no WS client, no CRDT dependency.
 - [ ] **Rate limiting**: Does Docmost implement rate limiting? If so, what are the limits?
-- [ ] **Attachment upload**: Is there an API endpoint for uploading attachments, or
-      is it only available through the editor UI?
+- [x] **Attachment upload**: *Resolved*: `POST /files/upload` (multipart, fields
+      `file` + `pageId`) is the undocumented endpoint the web editor uses for
+      inline images and attachments. It returns an attachment record (`id`,
+      `fileName`, ...); the page-embeddable URL is `/api/files/{id}/{fileName}`.
+      Because it is undocumented, `build_attachment_url()` accepts the record
+      both bare and inside the usual `{success, status, data}` envelope rather
+      than betting on one shape. Wired up as
+      `docmost-cli attachment upload <page-id> --file <path>`.
 - [x] **Space slug vs ID**: Some endpoints accept slug, others require ID.
       *Resolved*: `resolve_space_id()` helper in `api/spaces.py` calls
       `POST /spaces/info` with `{spaceSlug: slug}` and returns the ID.
