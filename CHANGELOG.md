@@ -22,6 +22,18 @@
   clear error rather than a traceback, and a filename is percent-escaped so it
   cannot reshape the URL path.
 
+### Fixed
+
+- The man page's upload-and-embed example used `--content "![alt](...)"`, which
+  dies in an interactive `bash` with *event not found*: Markdown image syntax
+  starts with `!`, and history expansion applies inside double quotes. It now
+  pipes through `--stdin`, with the single-quote form as an alternative. Found
+  by running the documented command against a live instance.
+- `docmost-cli.1` declares the `tbl` preprocessor, so its OUTPUT CONVENTIONS
+  table renders as a table rather than as raw tbl source, and the table now fits
+  an 80-column terminal instead of overflowing it. All ten pages are clean under
+  `groff -ww`.
+
 ### Changed
 
 - The release workflow no longer mistakes a null release body for hand-written

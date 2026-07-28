@@ -77,7 +77,7 @@ docmost-cli page create <space-slug> --title "My Page" --file content.md
 | `docmost-cli page get <page-id>` | Get page content as Markdown (`--meta`, `--raw`) |
 | `docmost-cli page create <space-slug>` | Create a new page (`--title`, `--file`, `--stdin`) |
 | `docmost-cli page update <page-id>` | Update a page in place (`--title`, `--icon`, `--content`, `--file`, `--stdin`, `--append`, `--prepend`) |
-| `docmost-cli page delete <page-id>` | Delete a page (with confirmation, `--yes` to skip) |
+| `docmost-cli page delete <page-id>` | Delete a page (with confirmation; the global `--yes` skips it, before the subcommand: `docmost-cli --yes page delete <id>`) |
 | `docmost-cli page move <page-id>` | Move a page (`--parent`, `--space`, `--root`, `--position first\|last\|<key>`) |
 | `docmost-cli page duplicate <page-id>` | Duplicate a page |
 | `docmost-cli page copy <page-id>` | Copy a page to another space (`--space`) |

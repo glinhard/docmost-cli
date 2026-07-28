@@ -40,6 +40,42 @@ class TestManPages:
         for page in _man_pages():
             assert "content/update" not in page.read_text(), page.name
 
+    def test_tables_declare_the_tbl_preprocessor(self) -> None:
+        """`man` only runs tbl when the file opens with the directive.
+
+        Without it a .TS table renders as raw tbl source — readable in the
+        repository, garbage on the reader's terminal.
+        """
+        for page in _man_pages():
+            text = page.read_text()
+            if ".TS" not in text:
+                continue
+            assert text.startswith("'\\\" t\n"), (
+                f"{page.name} has a .TS table but no leading '\\\" t directive"
+            )
+
+    def test_no_history_expansion_in_examples(self) -> None:
+        """`--content "![alt](...)"` dies in an interactive bash.
+
+        History expansion applies inside double quotes, so a Markdown image
+        starting with `!` fails with "event not found". Use --stdin, or single
+        quotes, where history expansion does not apply.
+        """
+        for page in _man_pages():
+            in_example = False
+            for number, line in enumerate(page.read_text().splitlines(), start=1):
+                # Only commands a reader would paste, not prose about them —
+                # this page documents the failure mode in running text.
+                if line.startswith(".EX"):
+                    in_example = True
+                    continue
+                if line.startswith(".EE"):
+                    in_example = False
+                    continue
+                if not in_example or "--content" not in line.replace("\\-", "-"):
+                    continue
+                assert '"!' not in line, f"{page.name}:{number} quotes ! with double quotes"
+
 
 class TestPyprojectVersion:
     def test_version_is_dynamic(self) -> None:
