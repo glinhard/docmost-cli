@@ -283,10 +283,11 @@ def create_and_place_page(
     parent_page_id: str | None = None,
     icon: str | None = None,
 ) -> str:
-    """Create a page via import, then move to parent and set icon.
+    """Create a page via import, then move to parent and set title and icon.
 
-    Combines the three-step create+move+icon workflow that the import
-    endpoint requires (it ignores parentPageId and icon).
+    Combines the create+move+metadata workflow the import endpoint requires:
+    it ignores parentPageId and icon, and derives the title from the Markdown
+    rather than honouring the one passed in.
 
     Args:
         client: Authenticated Docmost client.
@@ -317,8 +318,13 @@ def create_and_place_page(
                 placement="first",
             ),
         )
-    if icon:
-        update_page_meta(client, page_id=page_id, icon=icon)
+    # The import endpoint takes the page title from the Markdown's first
+    # heading, so an explicit title is silently discarded whenever the content
+    # carries its own H1 — the caller asks for one title and the page persists
+    # another. Set it explicitly rather than depending on what the server
+    # inferred, folding the icon into the same request so this costs one call,
+    # not two.
+    update_page_meta(client, page_id=page_id, title=title, icon=icon)
 
     return page_id
 

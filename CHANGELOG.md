@@ -26,6 +26,17 @@
 
 ### Fixed
 
+- **`page create --title` was silently discarded when the Markdown began with
+  its own heading** ([#12](https://github.com/glinhard/docmost-cli/issues/12)).
+  The import endpoint derives the page title from the first H1, and the CLI
+  never applied the explicit title afterwards — so it reported creating
+  *"agt01 — Ferdl personal agent host"* while the page persisted as *"agt01"*.
+  The title is now always applied after import, folded into the same request as
+  `--icon` so it costs one call rather than two. The Markdown body keeps its
+  heading; only the title metadata is overridden.
+
+  This also fixes `sync push`: a frontmatter title edited without touching the
+  body's H1 used to be ignored on page creation.
 - The man page's upload-and-embed example used `--content "![alt](...)"`, which
   dies in an interactive `bash` with *event not found*: Markdown image syntax
   starts with `!`, and history expansion applies inside double quotes. It now
