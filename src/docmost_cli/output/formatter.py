@@ -4,7 +4,8 @@ import json
 import sys
 from typing import Any, NoReturn
 
-from rich.console import Console
+from rich.console import Console, RenderableType
+from rich.table import Table
 
 __all__ = [
     "print_content",
@@ -12,11 +13,18 @@ __all__ = [
     "print_error",
     "print_json",
     "print_key_value",
+    "print_progress",
+    "print_rendered",
     "print_result",
     "print_table",
     "print_warning",
 ]
 
+# The two consoles every renderer in the project writes through. Keeping them
+# here — rather than letting each module build its own — is what makes the
+# stdout/stderr split a property of this module instead of a convention each
+# caller has to remember.
+_out_console = Console()
 _err_console = Console(stderr=True)
 
 
@@ -52,8 +60,6 @@ def print_key_value(data: dict[str, Any], key_style: str = "bold") -> None:
         data: Dictionary of key-value pairs to display.
         key_style: Rich style string for keys column.
     """
-    from rich.table import Table
-
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(style=key_style)
     table.add_column()
@@ -61,8 +67,7 @@ def print_key_value(data: dict[str, Any], key_style: str = "bold") -> None:
         if value is not None and value != "":
             table.add_row(str(key), str(value))
 
-    console = Console()
-    console.print(table)
+    _out_console.print(table)
 
 
 def _cell(value: Any) -> str:
@@ -112,16 +117,13 @@ def print_table(
         print_json(payload)
         return
 
-    from rich.table import Table
-
     table = Table()
     for col in render_columns:
         table.add_column(col)
     for row in render_rows:
         table.add_row(*(_cell(row.get(col)) for col in render_columns))
 
-    console = Console()
-    console.print(table)
+    _out_console.print(table)
 
     if meta is not None and meta.get("hasNextPage"):
         _err_console.print(f"More results available. Next cursor: {meta.get('nextCursor')}")
@@ -130,6 +132,26 @@ def print_table(
 def print_result(resource_id: str, message: str) -> None:
     """Print resource ID to stdout, confirmation to stderr."""
     sys.stdout.write(resource_id + "\n")
+    _err_console.print(message)
+
+
+def print_rendered(renderable: RenderableType) -> None:
+    """Print a Rich renderable — a table, or a markup string — to stdout.
+
+    For primary output that needs Rich's layout rather than the byte-faithful
+    passthrough of :func:`print_content`. Callers build the renderable; this is
+    the one place that owns the console it goes to.
+    """
+    _out_console.print(renderable)
+
+
+def print_progress(message: str) -> None:
+    """Print a progress or confirmation line to stderr.
+
+    The public entry point for the running commentary that long operations
+    (``sync pull``, ``sync push``) emit while they work, so those modules do not
+    have to reach for a console of their own. Rich markup is interpreted.
+    """
     _err_console.print(message)
 
 

@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from docmost_cli.output.formatter import _err_console as _err
-from docmost_cli.sync.diff import ChangeType, PageChange, SyncDiff
+from docmost_cli.api.pages import (
+    CONTENT_UNSUPPORTED_MESSAGE,
+    create_and_place_page,
+    delete_page,
+    move_page,
+    resolve_position,
+    try_update_page_content,
+    update_page_content,
+    update_page_meta,
+)
+from docmost_cli.api.spaces import resolve_space_id
+from docmost_cli.output.formatter import print_error, print_progress
+from docmost_cli.sync.diff import ChangeType, PageChange, SyncDiff, compute_diff, describe_changes
+from docmost_cli.sync.frontmatter import write_sync_file
+from docmost_cli.sync.manifest import (
+    build_page_entry,
+    compute_content_hash,
+    require_manifest,
+    save_manifest,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,23 +72,16 @@ def push_space(
     Returns:
         PushResult with counts and any ID remaps.
     """
-    from docmost_cli.api.spaces import resolve_space_id
-    from docmost_cli.output.formatter import print_error
-    from docmost_cli.sync.diff import compute_diff
-    from docmost_cli.sync.manifest import load_manifest, save_manifest
-
     space_id = resolve_space_id(client, space_slug)
 
-    manifest = load_manifest(dir_path)
-    if manifest is None:
-        print_error(f"No manifest found in '{dir_path}'. Run 'sync pull' first.")
+    manifest = require_manifest(dir_path)
 
     if diff is None:
         diff = compute_diff(manifest, dir_path)
     result = PushResult(unchanged=diff.unchanged)
 
     if not diff.has_changes:
-        _err.print("No changes to push.")
+        print_progress("No changes to push.")
         return result
 
     # Display summary
@@ -102,13 +114,13 @@ def push_space(
         save_manifest(dir_path, manifest)
 
     if id_remap:
-        _err.print(
+        print_progress(
             f"[yellow]{len(id_remap)} page(s) were recreated and got new IDs. "
             "Inbound wiki links, comments and page history for those pages are "
             "gone.[/yellow]"
         )
 
-    _err.print(
+    print_progress(
         f"Pushed to '{space_slug}': "
         f"{result.created} created, {result.updated} updated, "
         f"{result.moved} moved, {result.deleted} deleted"
@@ -133,20 +145,6 @@ def _execute_push(
     Mutates ``manifest``, ``result`` and ``id_remap`` in place so the caller
     can persist partial progress if a phase aborts.
     """
-    from docmost_cli.api.pages import (
-        CONTENT_UNSUPPORTED_MESSAGE,
-        create_and_place_page,
-        delete_page,
-        move_page,
-        resolve_position,
-        try_update_page_content,
-        update_page_content,
-        update_page_meta,
-    )
-    from docmost_cli.output.formatter import print_error
-    from docmost_cli.sync.frontmatter import write_sync_file
-    from docmost_cli.sync.manifest import build_page_entry, compute_content_hash
-
     # Whether this server applies content sent to POST /pages/update (v0.71+).
     # Probed once on the first content change, then cached.
     content_update_ok: bool | None = None
@@ -170,7 +168,7 @@ def _execute_push(
         if parent_id and parent_id in id_remap:
             parent_id = id_remap[parent_id]
 
-        _err.print(f"  Creating: {title}")
+        print_progress(f"  Creating: {title}")
         new_id = create_and_place_page(
             client,
             space_id=space_id,
@@ -209,21 +207,22 @@ def _execute_push(
         has_meta_change = bool(change.changes & {ChangeType.TITLE_CHANGED, ChangeType.ICON_CHANGED})
 
         # Content update
+        recreated = False
         if has_content_change:
             if content_update_ok is None:
                 # First attempt doubles as the capability probe.
                 content_update_ok = try_update_page_content(client, page_id=page_id, content=body)
                 if content_update_ok:
-                    _err.print(f"  Updated: {title}")
+                    print_progress(f"  Updated: {title}")
             elif content_update_ok:
                 update_page_content(client, page_id=page_id, content=body)
-                _err.print(f"  Updated: {title}")
+                print_progress(f"  Updated: {title}")
 
             if not content_update_ok:
                 if not allow_recreate:
                     print_error(CONTENT_UNSUPPORTED_MESSAGE, exit_code=1)
                 if not recreate_warned:
-                    _err.print(
+                    print_progress(
                         f"[yellow]Warning: this server cannot update page content in "
                         f"place. --allow-recreate will DELETE and RE-CREATE "
                         f"{content_change_count} page(s). Their page IDs change; "
@@ -231,7 +230,7 @@ def _execute_push(
                         f"to those pages will break.[/yellow]"
                     )
                     recreate_warned = True
-                _err.print(f"  Replacing: {title}")
+                print_progress(f"  Replacing: {title}")
                 new_id = _recreate_page(
                     client,
                     space_id=space_id,
@@ -246,10 +245,11 @@ def _execute_push(
                 write_sync_file(dir_path / change.filename, meta, body)
                 manifest["pages"].pop(page_id, None)
                 page_id = new_id
+                recreated = True
 
-        # Meta update (title/icon) — skip if the page was just recreated with them
-        if has_meta_change and not (has_content_change and not content_update_ok):
-            _err.print(f"  Metadata: {title}")
+        # Meta update (title/icon) — the recreate path already set both
+        if has_meta_change and not recreated:
+            print_progress(f"  Metadata: {title}")
             update_page_meta(
                 client,
                 page_id=page_id,
@@ -269,11 +269,7 @@ def _execute_push(
         result.updated += 1
 
     # Phase B2: Move pages (that weren't already handled as part of modified)
-    modified_ids = {c.page_id for c in diff.modified}
-    for change in diff.moved:
-        if change.page_id in modified_ids:
-            continue
-
+    for change in diff.move_only:
         meta = change.local_meta or {}
         page_id = change.page_id
         parent_id = meta.get("parent_id", "").strip() or None
@@ -285,7 +281,7 @@ def _execute_push(
         if parent_id and parent_id in id_remap:
             parent_id = id_remap[parent_id]
 
-        _err.print(f"  Moving: {title}")
+        print_progress(f"  Moving: {title}")
         move_page(
             client,
             page_id=page_id,
@@ -309,12 +305,12 @@ def _execute_push(
         if delete:
             for change in diff.deleted:
                 entry = change.manifest_entry or {}
-                _err.print(f"  Deleting: {entry.get('title', change.page_id)}")
+                print_progress(f"  Deleting: {entry.get('title', change.page_id)}")
                 delete_page(client, change.page_id)
                 manifest["pages"].pop(change.page_id, None)
                 result.deleted += 1
         else:
-            _err.print(
+            print_progress(
                 f"  [yellow]{len(diff.deleted)} page(s) on server not found locally. "
                 "Use --delete to remove.[/yellow]"
             )
@@ -340,8 +336,6 @@ def _recreate_page(
     Returns:
         New page ID.
     """
-    from docmost_cli.api.pages import create_and_place_page, delete_page
-
     new_id = create_and_place_page(
         client,
         space_id=space_id,
@@ -402,34 +396,27 @@ def _print_summary(diff: SyncDiff) -> None:
         lines.append(f"  Create:    {len(diff.new)} page(s)")
     if diff.modified:
         lines.append(f"  Update:    {len(diff.modified)} page(s)")
-    if diff.moved:
-        move_only = [c for c in diff.moved if c not in diff.modified]
-        if move_only:
-            lines.append(f"  Move:      {len(move_only)} page(s)")
+    move_only = diff.move_only
+    if move_only:
+        lines.append(f"  Move:      {len(move_only)} page(s)")
     if diff.deleted:
         lines.append(f"  Delete:    {len(diff.deleted)} page(s)")
     lines.append(f"  Unchanged: {diff.unchanged} page(s)")
-    _err.print("Push plan:")
+    print_progress("Push plan:")
     for line in lines:
-        _err.print(line)
+        print_progress(line)
 
 
 def _print_dry_run(diff: SyncDiff) -> None:
     """Print detailed plan to stdout for scripting."""
-    import sys
-
     for change in diff.new:
         meta = change.local_meta or {}
         sys.stdout.write(f"CREATE {change.filename} ({meta.get('title', '?')})\n")
     for change in diff.modified:
-        types = ", ".join(c.value for c in change.changes if c != ChangeType.MOVED)
-        sys.stdout.write(f"UPDATE {change.filename} ({types})\n")
-    for change in diff.moved:
-        if change not in diff.modified:
-            meta = change.local_meta or {}
-            sys.stdout.write(
-                f"MOVE   {change.filename} -> parent:{meta.get('parent_id', 'root')}\n"
-            )
+        sys.stdout.write(f"UPDATE {change.filename} ({describe_changes(change.changes)})\n")
+    for change in diff.move_only:
+        meta = change.local_meta or {}
+        sys.stdout.write(f"MOVE   {change.filename} -> parent:{meta.get('parent_id', 'root')}\n")
     for change in diff.deleted:
         entry = change.manifest_entry or {}
         sys.stdout.write(f"DELETE {entry.get('filename', '?')} ({entry.get('title', '?')})\n")

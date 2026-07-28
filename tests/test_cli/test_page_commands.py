@@ -651,10 +651,16 @@ class TestPageExport:
 
 
 class TestPageImport:
-    def test_import_with_title(self, tmp_config, tmp_path, httpx_mock) -> None:
-        md_file = tmp_path / "doc.md"
-        md_file.write_text("# Auto Title\n\nSome content")
+    """`page import --title` has to reach the server, not just the message.
 
+    The import endpoint takes no title — it names the page after the file's
+    first heading or the filename. So an explicit --title needs the same
+    follow-up metadata call that `page create` makes, or the CLI reports one
+    title while the page persists another (the #12 defect, one command over).
+    """
+
+    @staticmethod
+    def _mock_import(httpx_mock) -> None:
         httpx_mock.add_response(
             url="https://docs.example.com/api/spaces",
             json={"data": {"items": [{"id": "s1", "slug": "eng", "name": "Eng"}]}},
@@ -662,6 +668,24 @@ class TestPageImport:
         httpx_mock.add_response(
             url="https://docs.example.com/api/pages/import",
             json={"id": "imported-page"},
+        )
+
+    @staticmethod
+    def _updates(httpx_mock) -> list[dict]:
+        return [
+            json.loads(r.read())
+            for r in httpx_mock.get_requests()
+            if str(r.url).endswith("/api/pages/update")
+        ]
+
+    def test_import_with_title(self, tmp_config, tmp_path, httpx_mock) -> None:
+        md_file = tmp_path / "doc.md"
+        md_file.write_text("# Auto Title\n\nSome content")
+
+        self._mock_import(httpx_mock)
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "imported-page"}},
         )
         result = runner.invoke(
             app,
@@ -680,24 +704,23 @@ class TestPageImport:
         assert result.exit_code == 0
         assert "imported-page" in result.output
 
+        updates = self._updates(httpx_mock)
+        assert len(updates) == 1
+        assert updates[0] == {"pageId": "imported-page", "title": "Custom Title"}
+
     def test_import_auto_title_from_h1(self, tmp_config, tmp_path, httpx_mock) -> None:
+        """No --title means no extra call: the server's own title is the answer."""
         md_file = tmp_path / "doc.md"
         md_file.write_text("# My Page Title\n\nContent here")
 
-        httpx_mock.add_response(
-            url="https://docs.example.com/api/spaces",
-            json={"data": {"items": [{"id": "s1", "slug": "eng", "name": "Eng"}]}},
-        )
-        httpx_mock.add_response(
-            url="https://docs.example.com/api/pages/import",
-            json={"id": "imported-page"},
-        )
+        self._mock_import(httpx_mock)
         result = runner.invoke(
             app,
             ["--config", str(tmp_config), "page", "import", "eng", "--file", str(md_file)],
         )
         assert result.exit_code == 0
         assert "imported-page" in result.output
+        assert self._updates(httpx_mock) == []
 
 
 class TestPageListTree:

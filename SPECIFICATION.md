@@ -167,7 +167,7 @@ docmost-cli page get <page-id>                    # Get page content as Markdown
   --meta                                      # Prepend YAML frontmatter (id, title, space, dates)
 
 docmost-cli page create <space-slug>              # Create a new page
-  --title "Page Title"                        # Required; wins over any H1 in the content
+  --title "Page Title"                        # Required; wins over a leading heading
   --content "Markdown string"                 # Content as inline string
   --file path/to/content.md                   # Content from file
   --stdin                                     # Content from stdin

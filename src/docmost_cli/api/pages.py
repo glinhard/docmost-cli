@@ -4,7 +4,7 @@ import random
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
-from docmost_cli.api.pagination import build_body, unwrap_data
+from docmost_cli.api.pagination import build_body, extract_id, paginate_all, unwrap_data
 from docmost_cli.api.position import PositionError, generate_key_between
 from docmost_cli.output.formatter import print_error, print_warning
 
@@ -300,8 +300,6 @@ def create_and_place_page(
     Returns:
         The new page's UUID.
     """
-    from docmost_cli.api.pagination import extract_id
-
     result = create_page_via_import(client, space_id=space_id, title=title, content=content)
     page_id = extract_id(result)
 
@@ -319,11 +317,11 @@ def create_and_place_page(
             ),
         )
     # The import endpoint takes the page title from the Markdown's first
-    # heading, so an explicit title is silently discarded whenever the content
-    # carries its own H1 — the caller asks for one title and the page persists
-    # another. Set it explicitly rather than depending on what the server
-    # inferred, folding the icon into the same request so this costs one call,
-    # not two.
+    # heading, at any level, and strips it from the body. So an explicit title
+    # is silently discarded whenever the content leads with a heading: the
+    # caller asks for one title and the page persists another. Set it
+    # explicitly rather than depending on what the server inferred, folding the
+    # icon into the same request so this costs one call, not two.
     update_page_meta(client, page_id=page_id, title=title, icon=icon)
 
     return page_id
@@ -574,8 +572,6 @@ def get_all_page_children(
     Returns:
         List of child page dicts.
     """
-    from docmost_cli.api.pagination import paginate_all
-
     if not space_id:
         info = get_page_info(client, page_id)
         space_id = info.get("spaceId", "")
@@ -592,8 +588,6 @@ def get_all_sidebar_pages(client: DocmostClient, space_id: str) -> list[dict[str
     Returns:
         List of root page dicts.
     """
-    from docmost_cli.api.pagination import paginate_all
-
     return paginate_all(get_sidebar_pages, client=client, space_id=space_id).items
 
 
@@ -745,7 +739,7 @@ def _fill_children(
             children = get_all_page_children(client, page["id"], space_id=space_id)
             page["children"] = children
         except SystemExit as exc:
-            if exc.code not in (4,):
+            if exc.code != 4:
                 raise
             page["children"] = []
             return

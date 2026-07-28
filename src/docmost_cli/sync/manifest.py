@@ -25,6 +25,7 @@ __all__ = [
     "build_page_entry",
     "compute_content_hash",
     "load_manifest",
+    "require_manifest",
     "sanitize_filename",
     "save_manifest",
 ]
@@ -110,6 +111,27 @@ def load_manifest(dir_path: Path) -> dict[str, Any] | None:
             f"Manifest version {version} is not supported by this CLI "
             f"(max supported: {MANIFEST_VERSION}). Please upgrade docmost-cli."
         )
+    return manifest
+
+
+def require_manifest(dir_path: Path) -> dict[str, Any]:
+    """Load the manifest, or exit with the standard "run sync pull first" error.
+
+    Every sync operation except ``pull`` itself needs an established manifest,
+    and each one used to spell the same check and the same message by hand.
+
+    Args:
+        dir_path: Directory that should contain the manifest file.
+
+    Returns:
+        The parsed manifest dict.
+
+    Raises:
+        SystemExit: If the directory holds no manifest.
+    """
+    manifest = load_manifest(dir_path)
+    if manifest is None:
+        print_error(f"No manifest found in '{dir_path}'. Run 'sync pull' first.")
     return manifest
 
 

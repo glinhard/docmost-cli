@@ -127,6 +127,10 @@ class TestDocmostClient:
             client.post("/users/me")
         assert exc.value.code == 1
 
+    def test_base_url_is_public(self, api_key_settings) -> None:
+        with DocmostClient(api_key_settings) as client:
+            assert client.base_url == "https://docs.example.com"
+
     def test_verbose_mode(self, httpx_mock, api_key_settings, capfd) -> None:
         httpx_mock.add_response(
             url="https://docs.example.com/api/users/me",
@@ -137,3 +141,73 @@ class TestDocmostClient:
         captured = capfd.readouterr()
         assert "POST" in captured.err
         assert "200" in captured.err
+
+
+class TestPostRaw:
+    """`post_raw` is the one method that used to skip the shared retry path.
+
+    With `raise_on_error` it must behave like every other call — same 401
+    re-authentication, same backoff — because `page export`, its only such
+    caller, is otherwise the one command a Community-edition user cannot run
+    with an expired session. Probes keep the old single-shot behaviour, which
+    the Enterprise/Community fallbacks depend on.
+    """
+
+    def test_401_triggers_reauth_and_retries(self, httpx_mock, session_settings) -> None:
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/export",
+            status_code=401,
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/auth/login",
+            json={"token": "fresh_jwt"},
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/export",
+            content=b"ZIPBYTES",
+        )
+
+        with DocmostClient(session_settings) as client:
+            response = client.post_raw("/pages/export", json={"pageId": "p1"})
+
+        assert response.content == b"ZIPBYTES"
+        assert response.request.headers["Authorization"] == "Bearer fresh_jwt"
+
+    def test_transient_5xx_is_retried(self, httpx_mock, api_key_settings, monkeypatch) -> None:
+        monkeypatch.setattr("time.sleep", lambda _: None)
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/export",
+            status_code=503,
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/export",
+            content=b"ZIPBYTES",
+        )
+
+        with DocmostClient(api_key_settings) as client:
+            response = client.post_raw("/pages/export", json={"pageId": "p1"})
+
+        assert response.content == b"ZIPBYTES"
+
+    def test_error_status_still_exits(self, httpx_mock, api_key_settings) -> None:
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/export",
+            status_code=404,
+        )
+        with DocmostClient(api_key_settings) as client, pytest.raises(SystemExit) as exc:
+            client.post_raw("/pages/export", json={"pageId": "nope"})
+        assert exc.value.code == 4
+
+    def test_probe_does_not_retry_or_exit(self, httpx_mock, api_key_settings) -> None:
+        """A single 404 response is enough: no retry, no SystemExit."""
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/content",
+            status_code=404,
+        )
+        with DocmostClient(api_key_settings) as client:
+            response = client.post_raw(
+                "/pages/content", json={"pageId": "p1"}, raise_on_error=False
+            )
+
+        assert response.status_code == 404
+        assert len(httpx_mock.get_requests()) == 1

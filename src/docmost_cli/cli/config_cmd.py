@@ -4,7 +4,6 @@ import sys
 from typing import Any
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from docmost_cli.api.auth import AuthError
@@ -16,12 +15,11 @@ from docmost_cli.config.store import (
     set_config_value,
     write_config,
 )
-from docmost_cli.output.formatter import print_error, print_json
+from docmost_cli.output.formatter import print_error, print_json, print_progress, print_rendered
 
 __all__ = ["config_app"]
 
 config_app: typer.Typer = typer.Typer(name="config", help="Manage configuration.")
-_console = Console(stderr=True)
 
 
 def _get_effective_config_path() -> str | None:
@@ -43,14 +41,14 @@ def config_init(
     profile: str = typer.Option("default", "--profile", "-p", help="Profile to configure"),
 ) -> None:
     """Interactive setup wizard for Docmost CLI configuration."""
-    _console.print("[bold]Docmost CLI Configuration[/bold]\n")
+    print_progress("[bold]Docmost CLI Configuration[/bold]\n")
 
     url = typer.prompt("Docmost URL (e.g., https://docs.example.com)")
     url = url.rstrip("/")
 
-    _console.print("\nAuthentication method:")
-    _console.print("  1. API key (Enterprise edition)")
-    _console.print("  2. Email + password (Community/AGPL edition)")
+    print_progress("\nAuthentication method:")
+    print_progress("  1. API key (Enterprise edition)")
+    print_progress("  2. Email + password (Community/AGPL edition)")
     auth_choice = typer.prompt("Choose", type=int, default=1)
 
     config_values: dict[str, str] = {"url": url}
@@ -69,9 +67,9 @@ def config_init(
     config[profile] = config_values
     write_config(config, path)
 
-    _console.print(f"\n[green]Configuration saved to {path}[/green]")
-    _console.print(f"Profile: [bold]{profile}[/bold]")
-    _console.print("\nRun [bold]docmost-cli config test[/bold] to verify connectivity.")
+    print_progress(f"\n[green]Configuration saved to {path}[/green]")
+    print_progress(f"Profile: [bold]{profile}[/bold]")
+    print_progress("\nRun [bold]docmost-cli config test[/bold] to verify connectivity.")
 
 
 _SECRET_KEYS = {"api_key", "password"}
@@ -121,8 +119,7 @@ def config_show(
     for key, value in display.items():
         table.add_row(key, str(value).lower() if isinstance(value, bool) else str(value))
 
-    console = Console()
-    console.print(table)
+    print_rendered(table)
 
 
 @config_app.command("set")
@@ -152,7 +149,7 @@ def config_set(
 
     path = get_config_path(_get_effective_config_path())
     set_config_value(key, stored, profile, path)
-    _console.print(f"Set [bold]{key}[/bold] in profile '{profile}'")
+    print_progress(f"Set [bold]{key}[/bold] in profile '{profile}'")
 
 
 @config_app.command("logout")
@@ -165,9 +162,9 @@ def config_logout() -> None:
     cache = get_cache_dir() / "session.json"
     if cache.exists():
         cache.unlink()
-        _console.print(f"Removed cached session token: {cache}")
+        print_progress(f"Removed cached session token: {cache}")
     else:
-        _console.print("No cached session token to remove.")
+        print_progress("No cached session token to remove.")
 
 
 @config_app.command("test")
@@ -175,11 +172,14 @@ def config_test() -> None:
     """Test connectivity and authentication."""
     from docmost_cli.cli.main import get_client
 
-    _console.print("Testing connection...\n")
+    print_progress("Testing connection...\n")
 
+    # SystemExit is deliberately not caught: get_client() has already printed
+    # the specific reason and chosen an exit code. Wrapping it added a second
+    # line reading "Configuration error: 1" — str(SystemExit(1)) is the code.
     try:
         client = get_client()
-    except (AuthError, SystemExit) as exc:
+    except AuthError as exc:
         print_error(f"Configuration error: {exc}", exit_code=3)
 
     try:
@@ -190,6 +190,6 @@ def config_test() -> None:
         sys.exit(3)
 
     name = result.get("name", result.get("email", "Unknown"))
-    _console.print("[green]Connected successfully![/green]")
-    _console.print(f"Authenticated as: [bold]{name}[/bold]")
-    _console.print(f"URL: {client._base_url}")
+    print_progress("[green]Connected successfully![/green]")
+    print_progress(f"Authenticated as: [bold]{name}[/bold]")
+    print_progress(f"URL: {client.base_url}")

@@ -223,17 +223,19 @@ Page icon emoji.
 .PP
 Outputs the new page ID to stdout and a confirmation message to stderr.
 .PP
-Docmost's import consumes a leading heading: it becomes the page title and is
-removed from the body. That happens with or without
+Docmost's import consumes the content's first heading \(em at any level \(em as
+the page title, and removes it from the body. That happens with or without
 .BR \-\-title ,
 so content beginning with
 .I "# Heading"
-loses that line either way \(em with
+or
+.I "## Heading"
+loses that line either way; with
 .B \-\-title
-the page is titled as asked instead of after the discarded heading. Put the
-text in
+the page is at least titled as asked, rather than after the discarded heading.
+Put the text in
 .B \-\-title
-if you need it, rather than relying on a heading in the content.
+if you need it. Starting a level lower does not preserve it.
 .SS update
 Update an existing page's title, icon, and/or content.
 .PP
@@ -432,6 +434,8 @@ Required.
 .TP
 .BI \-\-title " title"
 Override the page title.
+This is the title the page is saved with, even when the file starts with a
+heading of its own.
 If omitted, the title is auto\-detected from the filename or
 the first H1 heading in the file.
 .TP
@@ -439,6 +443,12 @@ the first H1 heading in the file.
 Parent page UUID to nest the imported page under.
 .PP
 Outputs the new page ID to stdout.
+.PP
+As with
+.BR "page create" ,
+Docmost's import consumes a leading heading: it becomes the page title and is
+removed from the body, with or without
+.BR \-\-title .
 .SH EXAMPLES
 List all pages in a space:
 .PP

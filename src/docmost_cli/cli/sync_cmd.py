@@ -1,11 +1,11 @@
 """Sync subcommands."""
 
+import sys
 from pathlib import Path
 
 import typer
 
 from docmost_cli.cli.main import get_client, state
-from docmost_cli.output.formatter import print_error
 
 __all__ = ["sync_app"]
 
@@ -45,18 +45,11 @@ def sync_status_cmd(
 
     See also: sync push (upload changes), sync pull (download from server).
     """
-    import sys
-
-    from docmost_cli.sync.diff import compute_diff
-    from docmost_cli.sync.manifest import load_manifest
+    from docmost_cli.sync.diff import compute_diff, describe_changes
+    from docmost_cli.sync.manifest import require_manifest
 
     target = dir_path or Path(space_slug)
-    manifest = load_manifest(target)
-    if manifest is None:
-        print_error(f"No manifest found in '{target}'. Run 'sync pull' first.")
-        return  # unreachable (print_error exits), but makes control flow explicit
-
-    diff = compute_diff(manifest, target)
+    diff = compute_diff(require_manifest(target), target)
 
     if not diff.has_changes:
         sys.stdout.write("No changes.\n")
@@ -69,14 +62,12 @@ def sync_status_cmd(
     if diff.modified:
         sys.stdout.write(f"  Modified:  {len(diff.modified)} file(s)\n")
         for c in diff.modified:
-            types = ", ".join(ct.value for ct in c.changes if ct.name != "MOVED")
-            sys.stdout.write(f"    ~ {c.filename} ({types})\n")
-    if diff.moved:
-        move_only = [c for c in diff.moved if c not in diff.modified]
-        if move_only:
-            sys.stdout.write(f"  Moved:     {len(move_only)} file(s)\n")
-            for c in move_only:
-                sys.stdout.write(f"    -> {c.filename}\n")
+            sys.stdout.write(f"    ~ {c.filename} ({describe_changes(c.changes)})\n")
+    move_only = diff.move_only
+    if move_only:
+        sys.stdout.write(f"  Moved:     {len(move_only)} file(s)\n")
+        for c in move_only:
+            sys.stdout.write(f"    -> {c.filename}\n")
     if diff.deleted:
         sys.stdout.write(f"  Deleted:   {len(diff.deleted)} file(s)\n")
         for c in diff.deleted:
@@ -113,7 +104,7 @@ def sync_push_cmd(
     See also: sync status (preview changes), sync pull (download from server).
     """
     from docmost_cli.sync.diff import compute_diff
-    from docmost_cli.sync.manifest import load_manifest
+    from docmost_cli.sync.manifest import require_manifest
     from docmost_cli.sync.push import push_space
 
     client = get_client()
@@ -122,11 +113,7 @@ def sync_push_cmd(
     # Pre-compute diff once — reused for confirmation prompt and push_space
     pre_diff = None
     if not dry_run and not state.yes:
-        manifest = load_manifest(target)
-        if manifest is None:
-            print_error(f"No manifest found in '{target}'. Run 'sync pull' first.")
-            return
-        pre_diff = compute_diff(manifest, target)
+        pre_diff = compute_diff(require_manifest(target), target)
         if pre_diff.has_changes:
             typer.confirm("Push changes?", abort=True)
 

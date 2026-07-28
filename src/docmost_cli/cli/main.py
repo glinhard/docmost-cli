@@ -144,39 +144,28 @@ def version_cmd() -> None:
         sys.stdout.write(f"python {platform.python_version()} on {platform.platform()}\n")
 
 
-# Register subcommand groups
-from docmost_cli.cli.config_cmd import config_app  # noqa: E402
-
-app.add_typer(config_app)
-
-from docmost_cli.cli.page import page_app  # noqa: E402
-
-app.add_typer(page_app)
-
-from docmost_cli.cli.space import space_app  # noqa: E402
-
-app.add_typer(space_app)
-
-from docmost_cli.cli.comment import comment_app  # noqa: E402
-
-app.add_typer(comment_app)
-
-from docmost_cli.cli.search import search_app  # noqa: E402
-
-app.add_typer(search_app)
-
+# Registered last, and deliberately below the definitions above: every
+# subcommand module imports `app`, `state` or `get_client` from this one, so
+# these imports have to run after those names exist. Hence the E402 waivers.
 from docmost_cli.cli.attachment import attachment_app  # noqa: E402
-
-app.add_typer(attachment_app)
-
+from docmost_cli.cli.comment import comment_app  # noqa: E402
+from docmost_cli.cli.config_cmd import config_app  # noqa: E402
+from docmost_cli.cli.page import page_app  # noqa: E402
+from docmost_cli.cli.search import search_app  # noqa: E402
+from docmost_cli.cli.space import space_app  # noqa: E402
+from docmost_cli.cli.sync_cmd import sync_app  # noqa: E402
+from docmost_cli.cli.user import user_app  # noqa: E402
 from docmost_cli.cli.workspace import workspace_app  # noqa: E402
 
-app.add_typer(workspace_app)
-
-from docmost_cli.cli.user import user_app  # noqa: E402
-
-app.add_typer(user_app)
-
-from docmost_cli.cli.sync_cmd import sync_app  # noqa: E402
-
-app.add_typer(sync_app)
+for _subcommand in (
+    config_app,
+    page_app,
+    space_app,
+    comment_app,
+    search_app,
+    attachment_app,
+    workspace_app,
+    user_app,
+    sync_app,
+):
+    app.add_typer(_subcommand)

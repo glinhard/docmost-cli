@@ -26,6 +26,32 @@
 
 ### Fixed
 
+- **`page import --title` never reached the server.** The flag was auto-detected,
+  printed in the confirmation message, and then dropped: the import endpoint has
+  no title parameter, so the page kept whatever title Docmost derived from the
+  file's first heading or its filename. The CLI said *"Imported 'X'"* about a
+  page called something else. This is the same defect as #12 one command over —
+  that fix landed inside `create_and_place_page`, which `page import` does not
+  go through. An explicit `--title` is now applied after the import; omitting it
+  still costs no extra call, since the server's own title is then the answer.
+- **`sync status` and `sync push --dry-run` listed change types in an order that
+  varied between runs.** `PageChange.changes` is a set of enum members, and
+  `Enum.__hash__` hashes the member *name* — so iteration follows Python's
+  per-process string hash seed. The same working tree could print
+  `content_changed, title_changed` on one run and `title_changed,
+  content_changed` on the next, which matters most for `--dry-run`, whose stdout
+  is the scripting-facing action plan. Both now render through one helper that
+  sorts by declaration order.
+- **`page export` could not recover from an expired session.** `post_raw` built
+  and sent its request directly instead of going through the shared retry path,
+  so the one command that uses it got no 401 re-authentication and no backoff on
+  429/5xx, unlike every other call in the CLI. On Community edition, where auth
+  *is* a refreshable session, that made an expired token a hard failure. Silent
+  endpoint probes keep their single-shot behaviour, which the
+  Enterprise/Community content fallbacks depend on.
+- `config test` no longer prints `Error: Configuration error: 1` underneath the
+  real error. It caught the `SystemExit` that `get_client()` raises after
+  reporting its own reason, and reformatted the exit *code* as the message.
 - **`page create --title` was silently discarded when the Markdown began with
   its own heading** ([#12](https://github.com/glinhard/docmost-cli/issues/12)).
   The import endpoint derives the page title from the first H1, and the CLI
@@ -34,12 +60,15 @@
   The title is now always applied after import, folded into the same request as
   `--icon` so it costs one call rather than two.
 
-  Note that Docmost's import *consumes* the leading heading: it becomes the
-  page title and is removed from the body. That is unchanged by this fix and
-  applies with or without `--title` — but it means a page created from
-  `# Heading` plus `--title "Other"` keeps neither the heading text in the body
-  nor as the title. Put the heading text in `--title`, or start the content
-  below the heading level, if you need it kept.
+  Note that Docmost's import *consumes* the content's first heading — **at any
+  level** — as the page title and removes it from the body. That is unchanged
+  by this fix and applies with or without `--title`, but it means a page
+  created from `# Heading` plus `--title "Other"` keeps that text neither in
+  the body nor as the title. Put it in `--title` if you need it.
+
+  Measured against Docmost Community, not inferred: content starting `##
+  Subheading` loses that line exactly as an `# H1` does, so dropping a level is
+  not a way to keep it.
 
   This also fixes `sync push`: a frontmatter title edited without touching the
   body's H1 used to be ignored on page creation.
@@ -64,6 +93,34 @@
 - CI lints the workflow files with actionlint, including shellcheck over every
   `run:` block. Nothing checked them before, which is how an unresolvable action
   pin, two deprecated runtimes and the null-body bug all reached `main` green.
+
+### Internal
+
+No behaviour change in any of these; they are the structural half of the same
+review that found the fixes above.
+
+- `SyncDiff.move_only` replaces three hand-written copies of "moved pages that
+  are not already being updated". Two of them compared whole `PageChange`
+  objects — every field, including the Markdown body — while the third compared
+  page IDs, so the plan `sync push` *printed* and the plan it *executed* were
+  two different computations that happened to agree.
+- `require_manifest()` in `sync/manifest.py` replaces three copies of
+  load-then-error-if-missing, and with them the two `return  # unreachable`
+  lines that followed a `NoReturn` call.
+- `output/formatter.py` now owns exactly one stdout and one stderr console, and
+  exposes `print_progress()` and `print_rendered()`. There were five consoles
+  before — two of them reached through `from ...formatter import _err_console`,
+  a private name, and two more rebuilt on every table render.
+- `sync/push.py` and `sync/pull.py` import at module level. Twenty-two imports
+  sat inside function bodies without a cycle to justify them; `sync/__init__.py`
+  imports the whole package eagerly regardless. `api/pages.py` likewise deferred
+  imports from a module it already imports on line 7.
+- `DocmostClient` gained a public `base_url` property, so `config test` stops
+  reading `client._base_url`, and a `_rebuild()` helper that replaces the
+  duplicated build-and-reauthenticate block in the retry loop.
+- `page get` fetches the page once instead of once per branch, and the nine
+  subcommand registrations in `cli/main.py` are one import block instead of nine
+  `# noqa: E402` pairs.
 
 ## 0.6.0 (2026-07-27)
 
