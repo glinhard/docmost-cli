@@ -57,6 +57,11 @@ class TestPageCreate:
             url="https://docs.example.com/api/pages/import",
             json={"id": "page-new"},
         )
+        # create_and_place_page now always applies the explicit title.
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "page-new"}},
+        )
         result = runner.invoke(
             app,
             [
@@ -90,6 +95,10 @@ class TestPageCreate:
         httpx_mock.add_response(
             url="https://docs.example.com/api/pages/move",
             json={"id": "child-page"},
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "child-page"}},
         )
         result = runner.invoke(
             app,
@@ -128,6 +137,10 @@ class TestPageCreate:
             url="https://docs.example.com/api/pages/import",
             json={"id": "empty-page"},
         )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "empty-page"}},
+        )
         result = runner.invoke(
             app,
             ["--config", str(tmp_config), "page", "create", "eng", "--title", "Empty"],
@@ -146,6 +159,10 @@ class TestPageCreate:
         httpx_mock.add_response(
             url="https://docs.example.com/api/pages/import",
             json={"id": "file-page"},
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "file-page"}},
         )
         result = runner.invoke(
             app,
@@ -777,3 +794,75 @@ class TestPageListTree:
             ["--config", str(tmp_config), "page", "list", "eng", "--tree", "--page-size", "5"],
         )
         assert result.exit_code == 2
+
+
+class TestPageCreateTitleWins:
+    """The import endpoint derives the title from the Markdown's first heading.
+
+    An explicit --title must survive that, or the CLI reports one title and the
+    page persists another.
+    """
+
+    @staticmethod
+    def _mock_create(httpx_mock, page_id: str = "page-new") -> None:
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/spaces",
+            json={"data": {"items": [{"id": "space-1", "slug": "eng", "name": "Eng"}]}},
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/import",
+            json={"id": page_id},
+        )
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": page_id, "title": "ignored"}},
+        )
+
+    @staticmethod
+    def _create(tmp_config, *args: str):
+        return runner.invoke(app, ["--config", str(tmp_config), "page", "create", "eng", *args])
+
+    def test_explicit_title_beats_the_markdown_h1(self, tmp_config, httpx_mock) -> None:
+        self._mock_create(httpx_mock)
+        result = self._create(
+            tmp_config, "--title", "Explicit CLI title", "--content", "# Markdown heading\n\nBody."
+        )
+        assert result.exit_code == 0
+
+        update = httpx_mock.get_requests()[-1]
+        assert str(update.url).endswith("/api/pages/update")
+        assert json.loads(update.read())["title"] == "Explicit CLI title"
+
+    def test_markdown_body_keeps_its_heading(self, tmp_config, httpx_mock) -> None:
+        """Only the title metadata is overridden; the body is the user's."""
+        self._mock_create(httpx_mock)
+        self._create(
+            tmp_config, "--title", "Explicit CLI title", "--content", "# Markdown heading\n\nBody."
+        )
+        imported = httpx_mock.get_requests()[1].read()
+        assert b"# Markdown heading" in imported
+
+    def test_title_applied_without_an_h1_too(self, tmp_config, httpx_mock) -> None:
+        self._mock_create(httpx_mock)
+        self._create(tmp_config, "--title", "Explicit CLI title", "--content", "Body with no head.")
+        update = httpx_mock.get_requests()[-1]
+        assert json.loads(update.read())["title"] == "Explicit CLI title"
+
+    def test_message_reports_the_persisted_title(self, tmp_config, httpx_mock) -> None:
+        self._mock_create(httpx_mock)
+        result = self._create(
+            tmp_config, "--title", "Explicit CLI title", "--content", "# Markdown heading"
+        )
+        assert "Explicit CLI title" in result.output
+        assert "Markdown heading" not in result.output
+
+    def test_icon_rides_along_in_one_request(self, tmp_config, httpx_mock) -> None:
+        """Title and icon share the metadata call rather than costing two."""
+        self._mock_create(httpx_mock)
+        self._create(tmp_config, "--title", "T", "--content", "# H", "--icon", "🚀")
+
+        updates = [r for r in httpx_mock.get_requests() if str(r.url).endswith("/pages/update")]
+        assert len(updates) == 1
+        body = json.loads(updates[0].read())
+        assert body["title"] == "T"
+        assert body["icon"] == "🚀"

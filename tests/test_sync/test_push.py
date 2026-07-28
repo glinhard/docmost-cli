@@ -264,7 +264,7 @@ class TestRecreatePage:
             url=f"{_TEST_URL}/api/pages/move",
             json={"data": {"id": new_page_id}},
         )
-        # 4. update_page_meta -> POST /pages/update (because icon is set)
+        # 4. update_page_meta -> POST /pages/update (title, and the icon)
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/update",
             json={"data": {"id": new_page_id}},
@@ -298,12 +298,20 @@ class TestRecreatePage:
         assert f"{_TEST_URL}/api/pages/delete" in urls[4]
 
     def test_no_parent_no_icon(self, httpx_mock) -> None:
-        """Skips move and icon update when not needed."""
+        """Skips the move, but still applies the title.
+
+        The import endpoint derives the title from the Markdown, so the
+        metadata call happens even with no icon and no parent.
+        """
         new_page_id = "new-page-id-5678"
 
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/import",
             json={"id": new_page_id},
+        )
+        httpx_mock.add_response(
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": new_page_id}},
         )
         httpx_mock.add_response(
             url=f"{_TEST_URL}/api/pages/delete",
@@ -323,7 +331,10 @@ class TestRecreatePage:
 
         assert result_id == new_page_id
         requests = httpx_mock.get_requests()
-        assert len(requests) == 2  # Only import + delete
+        urls = [str(r.url) for r in requests]
+        assert len(requests) == 3  # import + title + delete
+        assert "/api/pages/move" not in " ".join(urls)
+        assert b'"title"' in requests[1].read()
 
 
 # ---------------------------------------------------------------------------
@@ -397,11 +408,18 @@ class TestPushNewPage:
             url=f"{_TEST_URL}/api/pages/import",
             json={"id": new_page_id},
         )
+        # update_page_meta -> POST /pages/update, applying the frontmatter title
+        # over whatever the import derived from the Markdown.
+        httpx_mock.add_response(
+            url=f"{_TEST_URL}/api/pages/update",
+            json={"data": {"id": new_page_id}},
+        )
 
         with _make_client() as client:
             result = push_space(client, "eng", target)
 
         assert result.created == 1
+        assert b'"New Page"' in httpx_mock.get_requests()[-1].read()
 
         # Verify the file now has the ID in frontmatter
         meta, body = read_sync_file(target / "new-page.md")
@@ -552,6 +570,11 @@ class TestPushContentUpdate:
             json={"data": {"id": FAKE_PAGE_ID, "content": {"type": "doc", "content": []}}},
         )
         httpx_mock.add_response(url=f"{_TEST_URL}/api/pages/import", json={"id": new_page_id})
+        # The recreate path applies the title, so /pages/update is hit a second
+        # time — the first response above is the content attempt that failed.
+        httpx_mock.add_response(
+            url=f"{_TEST_URL}/api/pages/update", json={"data": {"id": new_page_id}}
+        )
         httpx_mock.add_response(url=f"{_TEST_URL}/api/pages/delete", json={"data": {}})
 
         with _make_client() as client:
