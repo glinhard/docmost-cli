@@ -833,8 +833,14 @@ class TestPageCreateTitleWins:
         assert str(update.url).endswith("/api/pages/update")
         assert json.loads(update.read())["title"] == "Explicit CLI title"
 
-    def test_markdown_body_keeps_its_heading(self, tmp_config, httpx_mock) -> None:
-        """Only the title metadata is overridden; the body is the user's."""
+    def test_content_is_uploaded_unmodified(self, tmp_config, httpx_mock) -> None:
+        """The CLI does not rewrite the body to force the title through.
+
+        What the server then does with the leading heading is its business —
+        Docmost's import consumes it as the title and drops it from the page —
+        but that must not become a reason for the CLI to start editing the
+        user's Markdown.
+        """
         self._mock_create(httpx_mock)
         self._create(
             tmp_config, "--title", "Explicit CLI title", "--content", "# Markdown heading\n\nBody."

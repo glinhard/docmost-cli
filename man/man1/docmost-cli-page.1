@@ -191,7 +191,7 @@ identifies the space to create the page in.
 Page title.
 Required.
 This is the title the page is saved with, even when the Markdown starts with a
-heading of its own; the heading stays in the body.
+heading of its own.
 .TP
 .BI \-\-content " markdown"
 Inline Markdown content string.
@@ -222,6 +222,18 @@ When set, the new page is nested under this parent.
 Page icon emoji.
 .PP
 Outputs the new page ID to stdout and a confirmation message to stderr.
+.PP
+Docmost's import consumes a leading heading: it becomes the page title and is
+removed from the body. That happens with or without
+.BR \-\-title ,
+so content beginning with
+.I "# Heading"
+loses that line either way \(em with
+.B \-\-title
+the page is titled as asked instead of after the discarded heading. Put the
+text in
+.B \-\-title
+if you need it, rather than relying on a heading in the content.
 .SS update
 Update an existing page's title, icon, and/or content.
 .PP

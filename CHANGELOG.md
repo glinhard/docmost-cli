@@ -32,8 +32,14 @@
   never applied the explicit title afterwards — so it reported creating
   *"agt01 — Ferdl personal agent host"* while the page persisted as *"agt01"*.
   The title is now always applied after import, folded into the same request as
-  `--icon` so it costs one call rather than two. The Markdown body keeps its
-  heading; only the title metadata is overridden.
+  `--icon` so it costs one call rather than two.
+
+  Note that Docmost's import *consumes* the leading heading: it becomes the
+  page title and is removed from the body. That is unchanged by this fix and
+  applies with or without `--title` — but it means a page created from
+  `# Heading` plus `--title "Other"` keeps neither the heading text in the body
+  nor as the title. Put the heading text in `--title`, or start the content
+  below the heading level, if you need it kept.
 
   This also fixes `sync push`: a frontmatter title edited without touching the
   body's H1 used to be ignored on page creation.
