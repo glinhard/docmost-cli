@@ -117,8 +117,28 @@ Upload an image and embed it in the page in one go:
 .RS 4
 .EX
 $ ID=$(docmost\-cli attachment upload "$PAGE" \-\-file ./diagram.png)
+$ printf '![diagram](/api/files/%s/diagram.png)\\n' "$ID" \\
+    | docmost\-cli page update "$PAGE" \-\-append \-\-stdin
+.EE
+.RE
+.PP
+Markdown image syntax starts with
+.BR ! ,
+which an interactive
+.BR bash (1)
+treats as a history expansion inside double quotes, so
+.B \-\-content "![...]"
+fails with
+.IR "event not found" .
+Piping through
+.B \-\-stdin
+as above sidesteps the shell entirely; single quotes also work, since
+history expansion does not apply inside them:
+.PP
+.RS 4
+.EX
 $ docmost\-cli page update "$PAGE" \-\-append \\
-    \-\-content "![diagram](/api/files/$ID/diagram.png)"
+    \-\-content '![diagram](/api/files/'"$ID"'/diagram.png)'
 .EE
 .RE
 .SH EXIT STATUS

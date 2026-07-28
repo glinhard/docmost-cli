@@ -16,11 +16,25 @@
   `![alt](/api/files/<id>/<filename>)`. The MIME type is guessed from the
   filename and falls back to `application/octet-stream`.
 
-  Because the endpoint is undocumented, the response is read both bare and
-  inside the `{success, status, data}` envelope every other endpoint uses,
-  rather than betting on one shape. A response carrying no usable record is a
+  Verified end to end against Docmost Community: the file uploads, the returned
+  URL renders in the page, and the endpoint answers with the attachment row
+  bare, without the `{success, status, data}` envelope every other endpoint
+  uses. The response is read both ways regardless, since an undocumented
+  endpoint's shape is not a contract. A response carrying no usable record is a
   clear error rather than a traceback, and a filename is percent-escaped so it
   cannot reshape the URL path.
+
+### Fixed
+
+- The man page's upload-and-embed example used `--content "![alt](...)"`, which
+  dies in an interactive `bash` with *event not found*: Markdown image syntax
+  starts with `!`, and history expansion applies inside double quotes. It now
+  pipes through `--stdin`, with the single-quote form as an alternative. Found
+  by running the documented command against a live instance.
+- `docmost-cli.1` declares the `tbl` preprocessor, so its OUTPUT CONVENTIONS
+  table renders as a table rather than as raw tbl source, and the table now fits
+  an 80-column terminal instead of overflowing it. All ten pages are clean under
+  `groff -ww`.
 
 ### Changed
 

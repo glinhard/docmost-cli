@@ -1,3 +1,4 @@
+'\" t
 .\" Manual page for docmost-cli(1)
 .\" Source: SPECIFICATION.md, src/docmost_cli/cli/main.py
 .TH DOCMOST\-CLI 1 "2026\-03\-22" "docmost\-cli 0.7.0" "User Commands"
@@ -146,10 +147,10 @@ l l l.
 Command type	stdout	stderr
 _
 Content (page get)	Raw Markdown	nothing
-Content + meta (page get \-\-meta)	YAML frontmatter + Markdown	nothing
-Lists (page list, search, ...)	Rich table (curated columns) or complete JSON (\-\-json)	nothing
-Single item (user me, workspace info)	Key\-value table or JSON (\-\-json)	nothing
-Writes (page create, delete, ...)	Resource ID only	Confirmation message
+Content + meta	Frontmatter + Markdown	nothing
+Lists (page list)	Table or JSON (\-\-json)	nothing
+Single item (user me)	Key\-value or JSON	nothing
+Writes (page create)	Resource ID only	Confirmation message
 Sync status	Change summary	nothing
 Sync push \-\-dry\-run	Action plan	nothing
 Sync ops (pull, push)	nothing	Progress + summary
