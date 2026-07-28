@@ -55,6 +55,27 @@ class DocmostClient:
             self._log.addHandler(handler)
             self._log.setLevel(logging.DEBUG)
 
+    @property
+    def base_url(self) -> str:
+        """The Docmost base URL this client talks to, without a trailing slash."""
+        return self._base_url
+
+    def _rebuild(self, request: httpx.Request) -> httpx.Request:
+        """Clone a request and re-apply auth, ready to be sent again.
+
+        httpx requests are single-use once their body stream is consumed, so
+        both the 401-refresh path and the backoff path need a fresh copy
+        carrying whatever header the (possibly refreshed) strategy now supplies.
+        """
+        rebuilt = self._http.build_request(
+            request.method,
+            str(request.url),
+            headers=dict(request.headers),
+            content=request.content,
+        )
+        self._auth.apply(rebuilt)
+        return rebuilt
+
     def _send_with_retry(self, request: httpx.Request) -> httpx.Response:
         """Send a request with auth, retry on 401/429/5xx, and error handling.
 
@@ -95,13 +116,7 @@ class DocmostClient:
             except AuthError as exc:
                 print_error(str(exc), exit_code=3)
 
-            request = self._http.build_request(
-                request.method,
-                str(request.url),
-                headers=dict(request.headers),
-                content=request.content,
-            )
-            self._auth.apply(request)
+            request = self._rebuild(request)
             try:
                 response = self._http.send(request)
             except httpx.HTTPError:
@@ -129,13 +144,7 @@ class DocmostClient:
 
             time.sleep(wait)
 
-            request = self._http.build_request(
-                request.method,
-                str(request.url),
-                headers=dict(request.headers),
-                content=request.content,
-            )
-            self._auth.apply(request)
+            request = self._rebuild(request)
             try:
                 response = self._http.send(request)
             except httpx.HTTPError:
@@ -214,23 +223,27 @@ class DocmostClient:
 
         Use for binary/non-JSON responses or silent probes.
 
+        With ``raise_on_error`` this behaves like every other call — same
+        401 re-authentication, same backoff on 429/5xx — and only the response
+        parsing differs. A probe (``raise_on_error=False``) deliberately gets
+        none of that: it is one attempt, and any failure has to come back as a
+        plain non-success response so the caller can fall back in silence.
+
         Args:
             path: API path relative to /api/.
             json: JSON body to send.
-            raise_on_error: If False, skip error handling (for endpoint probes).
+            raise_on_error: If False, skip retry and error handling (probes).
         """
         url = f"{self._base_url}/api{path}"
         request = self._http.build_request("POST", url, json=json)
+        if raise_on_error:
+            return self._send_with_retry(request)
+
         self._auth.apply(request)
         try:
-            response = self._http.send(request)
+            return self._http.send(request)
         except httpx.HTTPError:
-            if raise_on_error:
-                print_error("Request failed.", exit_code=1)
             return httpx.Response(status_code=0)  # Sentinel for failed probe
-        if raise_on_error:
-            self._handle_error(response)
-        return response
 
     def get(self, path: str, **kwargs: Any) -> dict[str, Any]:
         """Convenience method for GET requests.

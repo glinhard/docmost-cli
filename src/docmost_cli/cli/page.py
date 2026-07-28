@@ -41,11 +41,13 @@ from docmost_cli.cli._list_opts import (
     validate_fields,
 )
 from docmost_cli.cli.main import get_client, state
+from docmost_cli.convert.prosemirror_to_md import convert_to_markdown
 from docmost_cli.output.formatter import (
     print_content,
     print_content_with_meta,
     print_error,
     print_json,
+    print_progress,
     print_result,
 )
 from docmost_cli.output.tree import print_tree
@@ -359,22 +361,18 @@ def page_get_cmd(
     """
     client = get_client()
 
-    if raw:
-        # Raw mode: reuse get_page_content which handles Enterprise/Community fallback
-        info = get_page_content(client, page_id)
-        pm_content = info.get("content")
-        if not pm_content:
-            print_error("No content available for raw output.", exit_code=1)
-        print_json(pm_content)
-        return
-
-    # Normal mode: get content and convert to Markdown
+    # get_page_content handles the Enterprise/Community endpoint fallback.
     info = get_page_content(client, page_id)
     pm_content = info.get("content")
     if not pm_content:
-        print_error("Page has no content.", exit_code=1)
+        print_error(
+            "No content available for raw output." if raw else "Page has no content.",
+            exit_code=1,
+        )
 
-    from docmost_cli.convert.prosemirror_to_md import convert_to_markdown
+    if raw:
+        print_json(pm_content)
+        return
 
     markdown = convert_to_markdown(pm_content)
 
@@ -494,9 +492,7 @@ def page_export_cmd(
         if output.exists() and not state.yes:
             typer.confirm(f"File '{output}' already exists. Overwrite?", abort=True)
         output.write_text(str(content), encoding="utf-8")
-        from rich.console import Console
-
-        Console(stderr=True).print(f"Exported to {output}")
+        print_progress(f"Exported to {output}")
     else:
         print_content(str(content))
 
@@ -508,7 +504,11 @@ def page_import_cmd(
     title: str | None = typer.Option(None, "--title", help="Override page title"),
     parent: str | None = typer.Option(None, "--parent", help="Parent page ID"),
 ) -> None:
-    """Import a file as a new page."""
+    """Import a file as a new page.
+
+    An explicit --title is applied after the import, so it survives the title
+    the server derives from the file. See also: page create.
+    """
     if not file.exists():
         print_error(f"File not found: {file}")
 
@@ -538,4 +538,14 @@ def page_import_cmd(
         parent_page_id=parent,
     )
     new_id = extract_id(result)
+
+    # The import endpoint names the page after the file's first heading, or the
+    # filename — it has no title parameter. So --title was only ever reported,
+    # never applied: the CLI said "Imported 'X'" while the page persisted as
+    # something else. Same defect as #12 on `page create`, which fixes it inside
+    # create_and_place_page. Only an explicit title needs the extra call; the
+    # auto-detected value is what the server already arrived at.
+    if title:
+        update_page_meta(client, page_id=new_id, title=title)
+
     print_result(new_id, f"Imported '{detected_title}' from {file.name}")

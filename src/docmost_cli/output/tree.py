@@ -5,12 +5,11 @@ Renders nested page structures using Unicode box-drawing characters.
 
 from typing import Any
 
-from rich.console import Console
+from docmost_cli.output.formatter import print_rendered
 
 __all__ = ["print_tree"]
 
 MAX_TITLE_LEN = 60
-_console = Console()
 
 
 def print_tree(pages: list[dict[str, Any]]) -> None:
@@ -53,7 +52,7 @@ def _print_node(
             pass
 
     label = f"{safe_icon} {title}".strip() if safe_icon else title
-    _console.print(f"{prefix}{connector}{label}")
+    print_rendered(f"{prefix}{connector}{label}")
 
     # Recurse into children
     children = page.get("children", [])

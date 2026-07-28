@@ -5,6 +5,7 @@ from docmost_cli.sync.diff import (
     PageChange,
     SyncDiff,
     compute_diff,
+    describe_changes,
 )
 from docmost_cli.sync.frontmatter import (
     parse_frontmatter,
@@ -19,6 +20,7 @@ from docmost_cli.sync.manifest import (
     build_page_entry,
     compute_content_hash,
     load_manifest,
+    require_manifest,
     sanitize_filename,
     save_manifest,
 )
@@ -44,12 +46,14 @@ __all__ = [
     "build_page_entry",
     "compute_content_hash",
     "compute_diff",
+    "describe_changes",
     "flatten_tree",
     "load_manifest",
     "parse_frontmatter",
     "pull_space",
     "push_space",
     "read_sync_file",
+    "require_manifest",
     "sanitize_filename",
     "save_manifest",
     "serialize_frontmatter",

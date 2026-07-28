@@ -386,3 +386,72 @@ class TestSyncPushDryRunCommand:
         )
         assert result.exit_code == 0
         assert "CREATE" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Output stability
+# ---------------------------------------------------------------------------
+
+
+class TestChangeListOrdering:
+    """The same working tree must print the same plan on every run.
+
+    `PageChange.changes` is a set of enum members, whose hash derives from the
+    member name — so plain iteration reorders itself as PYTHONHASHSEED changes.
+    These pin the rendered order rather than the seed the suite happens to run
+    under; the cross-seed proof lives in the CI matrix and in
+    test_diff.py::TestDescribeChanges.
+    """
+
+    @staticmethod
+    def _dir_with_three_changes(tmp_path: Path) -> Path:
+        target = _setup_synced_dir(
+            tmp_path,
+            pages={
+                FAKE_PAGE_ID: build_page_entry(
+                    title="Old Title",
+                    filename="page.md",
+                    parent_id=None,
+                    icon="",
+                    content_hash=compute_content_hash("Old body.\n"),
+                )
+            },
+        )
+        _write_page(
+            target,
+            "page.md",
+            page_id=FAKE_PAGE_ID,
+            title="New Title",
+            icon="🚀",
+            body="New body.\n",
+        )
+        return target
+
+    def test_status_lists_types_in_declaration_order(self, tmp_config, tmp_path: Path) -> None:
+        target = self._dir_with_three_changes(tmp_path)
+        result = runner.invoke(
+            app, ["--config", str(tmp_config), "sync", "status", "eng", "--dir", str(target)]
+        )
+        assert result.exit_code == 0
+        assert "(content_changed, title_changed, icon_changed)" in result.output
+
+    def test_dry_run_lists_types_in_declaration_order(
+        self, tmp_config, httpx_mock, tmp_path: Path
+    ) -> None:
+        target = self._dir_with_three_changes(tmp_path)
+        _mock_resolve_space(httpx_mock)
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(tmp_config),
+                "sync",
+                "push",
+                "eng",
+                "--dir",
+                str(target),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "UPDATE page.md (content_changed, title_changed, icon_changed)" in result.output

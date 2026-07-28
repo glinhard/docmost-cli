@@ -5,11 +5,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-__all__ = ["ChangeType", "PageChange", "SyncDiff", "compute_diff"]
+__all__ = ["ChangeType", "PageChange", "SyncDiff", "compute_diff", "describe_changes"]
 
 
 class ChangeType(enum.Enum):
-    """Types of changes detected between local and manifest."""
+    """Types of changes detected between local and manifest.
+
+    Declaration order is also the reporting order — see
+    :func:`describe_changes`.
+    """
 
     NEW = "new"
     CONTENT_CHANGED = "content_changed"
@@ -17,6 +21,27 @@ class ChangeType(enum.Enum):
     MOVED = "moved"
     ICON_CHANGED = "icon_changed"
     DELETED = "deleted"
+
+
+def describe_changes(changes: set[ChangeType]) -> str:
+    """Render a change set as a stable, comma-separated list of type names.
+
+    ``PageChange.changes`` is a set, and ``Enum.__hash__`` hashes the member
+    *name* — so plain iteration reorders itself between runs as Python's string
+    hash seed changes. Both ``sync status`` and ``sync push --dry-run`` put this
+    list in front of users, the latter on stdout as a scripting-facing plan, so
+    the order is sorted by declaration instead of left to the hash seed.
+
+    ``MOVED`` is excluded: both callers report moves on their own line.
+
+    Args:
+        changes: The change types detected for one page.
+
+    Returns:
+        Comma-separated change values, in ChangeType declaration order.
+    """
+    ordered = [kind for kind in ChangeType if kind in changes and kind is not ChangeType.MOVED]
+    return ", ".join(kind.value for kind in ordered)
 
 
 @dataclass
@@ -45,6 +70,20 @@ class SyncDiff:
     def has_changes(self) -> bool:
         """Return True if any changes were detected."""
         return bool(self.new or self.modified or self.moved or self.deleted)
+
+    @property
+    def move_only(self) -> list[PageChange]:
+        """Moved pages that are not already being updated for another reason.
+
+        A page whose content and parent both changed lands in ``modified`` and
+        ``moved`` alike; the push handles its move as part of the update, so
+        every caller has to subtract one list from the other. Doing it here
+        keeps the reported plan and the executed plan the same computation —
+        they used to be two, one comparing whole ``PageChange`` objects and one
+        comparing page IDs, free to disagree.
+        """
+        modified_ids = {change.page_id for change in self.modified}
+        return [change for change in self.moved if change.page_id not in modified_ids]
 
 
 def compute_diff(manifest: dict[str, Any], dir_path: Path) -> SyncDiff:

@@ -5,7 +5,19 @@ from pathlib import Path
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
-from docmost_cli.output.formatter import _err_console as _err
+from docmost_cli.api.pages import build_page_tree, get_page_content
+from docmost_cli.api.spaces import resolve_space_id
+from docmost_cli.convert.prosemirror_to_md import convert_to_markdown
+from docmost_cli.output.formatter import print_error, print_progress
+from docmost_cli.sync.frontmatter import write_sync_file
+from docmost_cli.sync.manifest import (
+    build_manifest,
+    build_page_entry,
+    compute_content_hash,
+    load_manifest,
+    sanitize_filename,
+    save_manifest,
+)
 
 __all__ = ["PullResult", "flatten_tree", "pull_space"]
 
@@ -72,25 +84,11 @@ def pull_space(
     Returns:
         PullResult with count and path.
     """
-    from docmost_cli.api.pages import build_page_tree, get_page_content
-    from docmost_cli.api.spaces import resolve_space_id
-    from docmost_cli.convert.prosemirror_to_md import convert_to_markdown
-    from docmost_cli.output.formatter import print_error
-    from docmost_cli.sync.frontmatter import write_sync_file
-    from docmost_cli.sync.manifest import (
-        build_manifest,
-        build_page_entry,
-        compute_content_hash,
-        load_manifest,
-        sanitize_filename,
-        save_manifest,
-    )
-
     # 1. Resolve space
     space_id = resolve_space_id(client, space_slug)
 
     # 2. Build page tree
-    _err.print(f"Fetching page tree for '{space_slug}'...")
+    print_progress(f"Fetching page tree for '{space_slug}'...")
     tree = build_page_tree(client, space_id)
 
     # 3. Flatten
@@ -102,7 +100,7 @@ def pull_space(
         dir_path.mkdir(parents=True, exist_ok=True)
         manifest = build_manifest(space_slug, space_id, [])
         save_manifest(dir_path, manifest)
-        _err.print(f"Pulled 0 pages from '{space_slug}' -> {dir_path}")
+        print_progress(f"Pulled 0 pages from '{space_slug}' -> {dir_path}")
         return PullResult(pages_pulled=0, dir_path=dir_path)
 
     # 4. Check target directory
@@ -121,7 +119,7 @@ def pull_space(
     for i, page_info in enumerate(flat_pages, 1):
         page_id = page_info["id"]
         title = page_info["title"]
-        _err.print(f"Pulling {i}/{total}: {title}")
+        print_progress(f"Pulling {i}/{total}: {title}")
 
         # Fetch content
         content_data = get_page_content(client, page_id)
@@ -154,5 +152,5 @@ def pull_space(
     manifest = build_manifest(space_slug, space_id, page_entries)
     save_manifest(dir_path, manifest)
 
-    _err.print(f"Pulled {total} pages from '{space_slug}' -> {dir_path}")
+    print_progress(f"Pulled {total} pages from '{space_slug}' -> {dir_path}")
     return PullResult(pages_pulled=total, dir_path=dir_path)

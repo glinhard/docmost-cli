@@ -432,6 +432,8 @@ Required.
 .TP
 .BI \-\-title " title"
 Override the page title.
+This is the title the page is saved with, even when the file starts with a
+heading of its own.
 If omitted, the title is auto\-detected from the filename or
 the first H1 heading in the file.
 .TP
@@ -439,6 +441,12 @@ the first H1 heading in the file.
 Parent page UUID to nest the imported page under.
 .PP
 Outputs the new page ID to stdout.
+.PP
+As with
+.BR "page create" ,
+Docmost's import consumes a leading heading: it becomes the page title and is
+removed from the body, with or without
+.BR \-\-title .
 .SH EXAMPLES
 List all pages in a space:
 .PP

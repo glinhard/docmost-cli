@@ -2,7 +2,13 @@
 
 from pathlib import Path
 
-from docmost_cli.sync.diff import ChangeType, PageChange, SyncDiff, compute_diff
+from docmost_cli.sync.diff import (
+    ChangeType,
+    PageChange,
+    SyncDiff,
+    compute_diff,
+    describe_changes,
+)
 from docmost_cli.sync.frontmatter import write_sync_file
 from docmost_cli.sync.manifest import compute_content_hash
 
@@ -887,3 +893,86 @@ class TestChangeType:
     def test_enum_count(self) -> None:
         """Exactly 6 change types."""
         assert len(ChangeType) == 6
+
+
+# ---------------------------------------------------------------------------
+# describe_changes / SyncDiff.move_only
+# ---------------------------------------------------------------------------
+
+
+class TestDescribeChanges:
+    """Change-type lists reach users, so their order cannot come from a set.
+
+    `Enum.__hash__` hashes the member name, and Python's string hash is seeded
+    per process — so iterating `PageChange.changes` reorders itself between
+    runs. `sync push --dry-run` puts this list on stdout as a scripting-facing
+    plan; a diff of two runs must not show phantom changes.
+    """
+
+    def test_declaration_order_not_set_order(self) -> None:
+        every_order = {
+            ChangeType.ICON_CHANGED,
+            ChangeType.CONTENT_CHANGED,
+            ChangeType.TITLE_CHANGED,
+        }
+        assert describe_changes(every_order) == "content_changed, title_changed, icon_changed"
+
+    def test_moved_is_excluded(self) -> None:
+        """Both callers report moves on their own line."""
+        changes = {ChangeType.CONTENT_CHANGED, ChangeType.MOVED}
+        assert describe_changes(changes) == "content_changed"
+
+    def test_move_only_change_set_renders_empty(self) -> None:
+        assert describe_changes({ChangeType.MOVED}) == ""
+
+    def test_empty(self) -> None:
+        assert describe_changes(set()) == ""
+
+
+class TestMoveOnly:
+    """One property, so the reported plan and the executed plan cannot diverge.
+
+    push's Phase B2 skipped by page ID while the summary and dry-run printers
+    subtracted whole PageChange objects — two predicates for one question.
+    """
+
+    @staticmethod
+    def _change(page_id: str, filename: str, changes: set[ChangeType]) -> PageChange:
+        return PageChange(page_id=page_id, filename=filename, changes=changes)
+
+    def test_page_that_also_changed_is_excluded(self) -> None:
+        both = self._change("p1", "a.md", {ChangeType.CONTENT_CHANGED, ChangeType.MOVED})
+        diff = SyncDiff(modified=[both], moved=[both])
+        assert diff.move_only == []
+
+    def test_pure_move_is_kept(self) -> None:
+        moved = self._change("p2", "b.md", {ChangeType.MOVED})
+        diff = SyncDiff(moved=[moved])
+        assert diff.move_only == [moved]
+
+    def test_matches_on_page_id_not_object_identity(self) -> None:
+        """A rebuilt PageChange for the same page is still the same page.
+
+        Object equality compared every field, including the whole Markdown body
+        — so a caller holding a differently-populated copy got a different
+        answer from the one push acted on.
+        """
+        modified = PageChange(
+            page_id="p3",
+            filename="c.md",
+            changes={ChangeType.CONTENT_CHANGED},
+            local_body="new body",
+        )
+        moved = PageChange(
+            page_id="p3",
+            filename="c.md",
+            changes={ChangeType.MOVED},
+            local_body="old body",
+        )
+        assert SyncDiff(modified=[modified], moved=[moved]).move_only == []
+
+    def test_mixed(self) -> None:
+        both = self._change("p1", "a.md", {ChangeType.TITLE_CHANGED, ChangeType.MOVED})
+        pure = self._change("p2", "b.md", {ChangeType.MOVED})
+        diff = SyncDiff(modified=[both], moved=[both, pure])
+        assert [c.page_id for c in diff.move_only] == ["p2"]
