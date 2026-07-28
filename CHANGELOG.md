@@ -60,12 +60,15 @@
   The title is now always applied after import, folded into the same request as
   `--icon` so it costs one call rather than two.
 
-  Note that Docmost's import *consumes* the leading heading: it becomes the
-  page title and is removed from the body. That is unchanged by this fix and
-  applies with or without `--title` — but it means a page created from
-  `# Heading` plus `--title "Other"` keeps neither the heading text in the body
-  nor as the title. Put the heading text in `--title`, or start the content
-  below the heading level, if you need it kept.
+  Note that Docmost's import *consumes* the content's first heading — **at any
+  level** — as the page title and removes it from the body. That is unchanged
+  by this fix and applies with or without `--title`, but it means a page
+  created from `# Heading` plus `--title "Other"` keeps that text neither in
+  the body nor as the title. Put it in `--title` if you need it.
+
+  Measured against Docmost Community, not inferred: content starting `##
+  Subheading` loses that line exactly as an `# H1` does, so dropping a level is
+  not a way to keep it.
 
   This also fixes `sync push`: a frontmatter title edited without touching the
   body's H1 used to be ignored on page creation.

@@ -317,11 +317,11 @@ def create_and_place_page(
             ),
         )
     # The import endpoint takes the page title from the Markdown's first
-    # heading, so an explicit title is silently discarded whenever the content
-    # carries its own H1 — the caller asks for one title and the page persists
-    # another. Set it explicitly rather than depending on what the server
-    # inferred, folding the icon into the same request so this costs one call,
-    # not two.
+    # heading, at any level, and strips it from the body. So an explicit title
+    # is silently discarded whenever the content leads with a heading: the
+    # caller asks for one title and the page persists another. Set it
+    # explicitly rather than depending on what the server inferred, folding the
+    # icon into the same request so this costs one call, not two.
     update_page_meta(client, page_id=page_id, title=title, icon=icon)
 
     return page_id
