@@ -84,8 +84,10 @@ def build_attachment_url(attachment: dict[str, Any]) -> str:
     Returns:
         A relative URL of the form "/api/files/{id}/{fileName}".
     """
-    # The endpoint is undocumented, so treat both the bare record and the
-    # envelope every other endpoint returns as valid rather than guessing.
+    # Docmost Community returns this record bare, unlike every other endpoint,
+    # which wraps its payload. The endpoint is undocumented, so that is not a
+    # contract; unwrap_data costs nothing and keeps this working if it ever
+    # moves under the standard interceptor.
     record = unwrap_data(attachment)
     attachment_id = record.get("id")
     file_name = record.get("fileName")

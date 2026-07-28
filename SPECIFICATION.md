@@ -989,12 +989,23 @@ These items need investigation during implementation. Update this section as ans
 - [ ] **Rate limiting**: Does Docmost implement rate limiting? If so, what are the limits?
 - [x] **Attachment upload**: *Resolved*: `POST /files/upload` (multipart, fields
       `file` + `pageId`) is the undocumented endpoint the web editor uses for
-      inline images and attachments. It returns an attachment record (`id`,
-      `fileName`, ...); the page-embeddable URL is `/api/files/{id}/{fileName}`.
-      Because it is undocumented, `build_attachment_url()` accepts the record
-      both bare and inside the usual `{success, status, data}` envelope rather
-      than betting on one shape. Wired up as
+      inline images and attachments. The page-embeddable URL is
+      `/api/files/{id}/{fileName}`. Wired up as
       `docmost-cli attachment upload <page-id> --file <path>`.
+
+      Verified against Docmost Community on 2026-07-28: it returns the
+      attachment row **bare, without** the `{success, status, data}` envelope
+      every other endpoint uses. Observed keys:
+
+      ```
+      aiChatId, createdAt, creatorId, deletedAt, fileExt, fileName, filePath,
+      fileSize, id, mimeType, pageId, spaceId, type, updatedAt, workspaceId
+      ```
+
+      `build_attachment_url()` still routes through `unwrap_data()`, so it keeps
+      working if the endpoint is ever brought under the standard interceptor.
+      That costs nothing and the endpoint is undocumented, so its shape is not
+      contractual.
 - [x] **Space slug vs ID**: Some endpoints accept slug, others require ID.
       *Resolved*: `resolve_space_id()` helper in `api/spaces.py` calls
       `POST /spaces/info` with `{spaceSlug: slug}` and returns the ID.

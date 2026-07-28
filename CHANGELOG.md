@@ -16,9 +16,11 @@
   `![alt](/api/files/<id>/<filename>)`. The MIME type is guessed from the
   filename and falls back to `application/octet-stream`.
 
-  Because the endpoint is undocumented, the response is read both bare and
-  inside the `{success, status, data}` envelope every other endpoint uses,
-  rather than betting on one shape. A response carrying no usable record is a
+  Verified end to end against Docmost Community: the file uploads, the returned
+  URL renders in the page, and the endpoint answers with the attachment row
+  bare, without the `{success, status, data}` envelope every other endpoint
+  uses. The response is read both ways regardless, since an undocumented
+  endpoint's shape is not a contract. A response carrying no usable record is a
   clear error rather than a traceback, and a filename is percent-escaped so it
   cannot reshape the URL path.
 
