@@ -93,6 +93,7 @@ docmost-cli page create <space-slug> --title "My Page" --file content.md
 | `docmost-cli comment update <comment-id>` | Edit a comment (`--content`) |
 | `docmost-cli search query <query>` | Full-text search (`--space`, `--type`, `--json`, pagination flags) |
 | `docmost-cli attachment search <query>` | Search attachments (`--space`, `--json`, pagination flags) |
+| `docmost-cli attachment upload <page-id>` | Upload a file to a page (`--file`) |
 | `docmost-cli workspace info` | Show workspace details (`--json`, `--fields`) |
 | `docmost-cli workspace members` | List workspace members (`--json`) |
 | `docmost-cli user me` | Show authenticated user info (`--json`, `--fields`) |

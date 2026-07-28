@@ -9,6 +9,11 @@ docmost\-cli\-attachment \- attachment operations for Docmost wiki
 .RB [ \-\-space
 .IR slug ]
 .RB [ \-\-json ]
+.PP
+.B docmost\-cli attachment upload
+.I page\-id
+.B \-\-file
+.I path
 .SH DESCRIPTION
 Commands for working with file attachments in a Docmost wiki.
 .SH SUBCOMMANDS
@@ -59,6 +64,28 @@ and
 .PP
 Default table columns: id, fileName, type.
 These affect the table only; \-\-json emits every field the server returns.
+.SS upload
+Upload a file (e.g. an image) and attach it to a page.
+.PP
+.I page\-id
+is the UUID of the page to attach the file to.
+.TP
+.BI \-\-file " path"
+Path to the local file to upload.
+The MIME type is guessed from the filename, falling back to
+.BR application/octet\-stream .
+.PP
+Prints the new attachment ID to stdout and a confirmation carrying the
+page\-embeddable URL (\fI/api/files/{id}/{fileName}\fR) to stderr, so
+.B ID=$(docmost\-cli attachment upload ...)
+captures the ID alone.
+Embed the file in a page's Markdown with
+.IR "![alt text](/api/files/<id>/<filename>)" .
+.PP
+This uses
+.IR /files/upload ,
+which is not part of Docmost's documented REST API; it is the endpoint the web
+editor itself uses for inline images and attachments.
 .SH EXAMPLES
 Search for attachments:
 .PP
@@ -73,6 +100,25 @@ Search within a space:
 .RS 4
 .EX
 $ docmost\-cli attachment search "logo" \-\-space design
+.EE
+.RE
+.PP
+Upload an image to a page:
+.PP
+.RS 4
+.EX
+$ docmost\-cli attachment upload 019e997e\-e14c\-7de7\-a35c\-15089aaa306f \\
+    \-\-file ./diagram.png
+.EE
+.RE
+.PP
+Upload an image and embed it in the page in one go:
+.PP
+.RS 4
+.EX
+$ ID=$(docmost\-cli attachment upload "$PAGE" \-\-file ./diagram.png)
+$ docmost\-cli page update "$PAGE" \-\-append \\
+    \-\-content "![diagram](/api/files/$ID/diagram.png)"
 .EE
 .RE
 .SH EXIT STATUS

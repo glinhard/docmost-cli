@@ -4,7 +4,7 @@ import copy
 import json
 from datetime import datetime
 
-from docmost_cli.output.formatter import print_json, print_table, print_warning
+from docmost_cli.output.formatter import print_json, print_result, print_table, print_warning
 
 # "extra" is outside COLUMNS on purpose: --json must keep it.
 ROWS = [{"id": "1", "title": "One", "extra": "kept"}]
@@ -121,6 +121,23 @@ class TestPrintJson:
         print_json({"when": datetime(2026, 1, 1)})
         payload = json.loads(capsys.readouterr().out)
         assert payload["when"].startswith("2026-01-01")
+
+
+class TestPrintResult:
+    """`PAGE_ID=$(docmost-cli page create ...)` must capture the ID alone."""
+
+    def test_id_on_stdout_message_on_stderr(self, capsys) -> None:
+        print_result("att-new", "Uploaded 'diagram.png'")
+        captured = capsys.readouterr()
+        assert captured.out == "att-new\n"
+        assert "Uploaded" in captured.err
+        assert "Uploaded" not in captured.out
+
+    def test_multiline_message_stays_off_stdout(self, capsys) -> None:
+        print_result("att-new", "Uploaded 'd.png'\nEmbed with: ![](/api/files/att-new/d.png)")
+        captured = capsys.readouterr()
+        assert captured.out == "att-new\n"
+        assert "/api/files/att-new/d.png" in captured.err
 
 
 class TestPrintWarning:
