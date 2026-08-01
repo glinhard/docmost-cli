@@ -52,6 +52,10 @@ class TestSanitizeFilename:
         result = sanitize_filename("***", FAKE_ID)
         assert result == f"untitled--{FAKE_ID[:8]}.md"
 
+    def test_null_title_gives_untitled(self) -> None:
+        result = sanitize_filename(None, FAKE_ID)
+        assert result == f"untitled--{FAKE_ID[:8]}.md"
+
     def test_unicode_preserved(self) -> None:
         result = sanitize_filename("Über Änderungen", FAKE_ID)
         assert "Über Änderungen" in result
