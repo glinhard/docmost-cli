@@ -39,7 +39,7 @@ _MAX_TITLE_LENGTH = 80
 _ID_PREFIX_LENGTH = 8
 
 
-def sanitize_filename(title: str, page_id: str) -> str:
+def sanitize_filename(title: str | None, page_id: str) -> str:
     """Generate a safe filename from page title and ID prefix.
 
     Format: ``{sanitized_title}--{id_prefix_8chars}.md``
@@ -52,13 +52,13 @@ def sanitize_filename(title: str, page_id: str) -> str:
     - Fall back to ``untitled`` if the title sanitizes to empty
 
     Args:
-        title: The page title (may contain any characters).
+        title: The page title, which may be null for legacy or untitled pages.
         page_id: The full page UUID.
 
     Returns:
         A filesystem-safe filename ending in ``.md``.
     """
-    sanitized = _UNSAFE_CHARS_RE.sub("-", title)
+    sanitized = _UNSAFE_CHARS_RE.sub("-", title or "")
     sanitized = _MULTI_DASH_RE.sub("-", sanitized)
     sanitized = sanitized.strip("- \t\n\r")
     sanitized = sanitized[:_MAX_TITLE_LENGTH]

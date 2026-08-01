@@ -137,7 +137,7 @@ def _mock_sidebar_pages(httpx_mock, pages: list[dict]) -> None:
 def _mock_page_content(
     httpx_mock,
     page_id: str,
-    title: str,
+    title: str | None,
     pm_content: dict | None = None,
 ) -> None:
     """Add mocks for get_page_content (calls /pages/info then /pages/content)."""
@@ -221,6 +221,41 @@ class TestPullCreatesFiles:
         assert len(manifest["pages"]) == 2
         assert "p1" in manifest["pages"]
         assert "p2" in manifest["pages"]
+
+
+class TestPullNullTitle:
+    """A page without a title is pulled using a stable fallback."""
+
+    def test_uses_untitled_fallback(self, httpx_mock, tmp_path: Path) -> None:
+        target = tmp_path / "test"
+
+        _mock_resolve_space(httpx_mock)
+        _mock_sidebar_pages(
+            httpx_mock,
+            [
+                {
+                    "id": "page-null-title",
+                    "title": None,
+                    "icon": "",
+                    "hasChildren": False,
+                    "children": [],
+                }
+            ],
+        )
+        _mock_page_content(httpx_mock, "page-null-title", None)
+
+        with _make_client() as client:
+            result = pull_space(client, "test", target)
+
+        assert result.pages_pulled == 1
+        page_path = target / "Untitled--page-nul.md"
+        assert page_path.exists()
+        assert "title: Untitled" in page_path.read_text(encoding="utf-8")
+
+        manifest = json.loads((target / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        entry = manifest["pages"]["page-null-title"]
+        assert entry["title"] == "Untitled"
+        assert entry["filename"] == page_path.name
 
 
 class TestPullWritesCorrectFrontmatter:

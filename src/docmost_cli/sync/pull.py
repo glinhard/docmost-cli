@@ -118,7 +118,7 @@ def pull_space(
     page_entries: list[dict[str, Any]] = []
     for i, page_info in enumerate(flat_pages, 1):
         page_id = page_info["id"]
-        title = page_info["title"]
+        title = page_info.get("title") or "Untitled"
         print_progress(f"Pulling {i}/{total}: {title}")
 
         # Fetch content
