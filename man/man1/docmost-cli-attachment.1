@@ -4,6 +4,13 @@
 .SH NAME
 docmost\-cli\-attachment \- attachment operations for Docmost wiki
 .SH SYNOPSIS
+.B docmost\-cli attachment list
+.I page\-id
+.RB [ \-\-query
+.IR text ]
+.RB [ \-\-unused ]
+.RB [ \-\-json ]
+.PP
 .B docmost\-cli attachment search
 .I query
 .RB [ \-\-space
@@ -17,8 +24,54 @@ docmost\-cli\-attachment \- attachment operations for Docmost wiki
 .SH DESCRIPTION
 Commands for working with file attachments in a Docmost wiki.
 .SH SUBCOMMANDS
+.SS list
+List every file attached to a page.
+.PP
+.I page\-id
+is the UUID of the page.
+.PP
+This includes files the page no longer shows.
+Each upload creates a new attachment, and it stays attached to the page after
+the content stops embedding it, so re\-uploading a page's images leaves the old
+copies behind.
+Docmost has no endpoint to delete a single attachment; they are removed only
+when the page itself is permanently deleted.
+Requires Docmost v0.96 or later.
+.TP
+.BI \-\-query " text"
+Only attachments whose filename contains
+.IR text ,
+ignoring case.
+.TP
+.B \-\-unused
+Only attachments whose ID appears nowhere in the page's content.
+Filtering happens after fetching, so
+.B \-\-limit
+caps the attachments checked, not the ones printed.
+.PP
+Also takes
+.BR \-\-limit ,
+.BR \-\-page\-size ,
+.BR \-\-cursor ,
+.BR \-\-no\-follow ,
+.BR \-\-json ,
+.B \-\-fields
+and
+.BR \-\-envelope ,
+as described under
+.BR search .
+.PP
+Default table columns: id, fileName, fileSize, createdAt.
 .SS search
 Search for attachments by name or content.
+.PP
+Requires Docmost Enterprise with attachment indexing.
+Community has no attachment search; there, use
+.B list
+with
+.B \-\-query
+on a page.
+The server returns a single, unpaginated set of results.
 .PP
 .I query
 is the search string.
@@ -81,12 +134,46 @@ page\-embeddable URL (\fI/api/files/{id}/{fileName}\fR) to stderr, so
 captures the ID alone.
 Embed the file in a page's Markdown with
 .IR "![alt text](/api/files/<id>/<filename>)" .
+Upload the file to the same page that embeds it: a share link only serves an
+attachment to the page it belongs to.
+.PP
+When Markdown is sent by
+.BR "page create" ,
+.BR "page update" ,
+.B page import
+or
+.BR "sync push" ,
+each image whose source is
+.I /api/files/<uuid>/...
+is sent as an
+.B <img>
+tag carrying
+.BR data\-attachment\-id .
+Docmost signs an image for public share links by that ID, and Markdown image
+syntax cannot carry it; without it the image appears broken to anonymous
+readers.
 .PP
 This uses
 .IR /files/upload ,
 which is not part of Docmost's documented REST API; it is the endpoint the web
 editor itself uses for inline images and attachments.
 .SH EXAMPLES
+List the files a page no longer shows:
+.PP
+.RS 4
+.EX
+$ docmost\-cli attachment list "$PAGE" \-\-unused
+.EE
+.RE
+.PP
+Count them:
+.PP
+.RS 4
+.EX
+$ docmost\-cli attachment list "$PAGE" \-\-unused \-\-json | jq length
+.EE
+.RE
+.PP
 Search for attachments:
 .PP
 .RS 4

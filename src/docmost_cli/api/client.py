@@ -76,11 +76,14 @@ class DocmostClient:
         self._auth.apply(rebuilt)
         return rebuilt
 
-    def _send_with_retry(self, request: httpx.Request) -> httpx.Response:
+    def _send_with_retry(
+        self, request: httpx.Request, *, missing_route_hint: str | None = None
+    ) -> httpx.Response:
         """Send a request with auth, retry on 401/429/5xx, and error handling.
 
         Args:
             request: The prepared httpx request.
+            missing_route_hint: Advice to print if the server has no such route.
 
         Returns:
             The HTTP response (success only; errors raise SystemExit).
@@ -159,16 +162,25 @@ class DocmostClient:
                 self._log.debug("  → %s (retry)", response.status_code)
 
         # Translate HTTP errors
-        self._handle_error(response)
+        self._handle_error(response, missing_route_hint=missing_route_hint)
 
         return response
 
-    def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        missing_route_hint: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """Make an authenticated API request with error handling.
 
         Args:
             method: HTTP method (GET, POST, etc.).
             path: API path relative to /api/ (e.g., "/pages/info").
+            missing_route_hint: Advice to print if this server has no such
+                route, e.g. which Docmost version or edition added it.
             **kwargs: Additional arguments passed to httpx (json, params, etc.).
 
         Returns:
@@ -176,11 +188,17 @@ class DocmostClient:
         """
         url = f"{self._base_url}/api{path}"
         request = self._http.build_request(method, url, **kwargs)
-        response = self._send_with_retry(request)
+        response = self._send_with_retry(request, missing_route_hint=missing_route_hint)
         # Every Docmost endpoint returns a JSON object envelope.
         return cast("dict[str, Any]", response.json())
 
-    def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
+    def post(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+        *,
+        missing_route_hint: str | None = None,
+    ) -> dict[str, Any]:
         """Convenience method for POST requests.
 
         Most Docmost API endpoints use POST.
@@ -188,11 +206,12 @@ class DocmostClient:
         Args:
             path: API path relative to /api/.
             json: JSON body to send.
+            missing_route_hint: Advice to print if this server has no such route.
 
         Returns:
             Parsed JSON response body.
         """
-        return self.request("POST", path, json=json)
+        return self.request("POST", path, json=json, missing_route_hint=missing_route_hint)
 
     def post_multipart(
         self,
@@ -268,11 +287,13 @@ class DocmostClient:
         self.close()
 
     @staticmethod
-    def _handle_error(response: httpx.Response) -> None:
+    def _handle_error(response: httpx.Response, *, missing_route_hint: str | None = None) -> None:
         """Translate HTTP error responses to user-friendly messages.
 
         Args:
             response: The HTTP response to check.
+            missing_route_hint: Advice appended when the 404 means the server
+                has no such route, rather than no such record.
         """
         if response.is_success:
             return
@@ -287,6 +308,15 @@ class DocmostClient:
         elif status == 403:
             print_error("Permission denied.", exit_code=1)
         elif status == 404:
+            if _is_missing_route(response):
+                message = (
+                    f"This Docmost server has no {response.request.method} "
+                    f"{response.request.url.path} endpoint."
+                )
+                print_error(
+                    f"{message} {missing_route_hint}" if missing_route_hint else message,
+                    exit_code=4,
+                )
             print_error(
                 "Resource not found. Check the ID or slug.",
                 exit_code=4,
@@ -309,3 +339,19 @@ class DocmostClient:
                 f"Unexpected error (HTTP {status}).",
                 exit_code=1,
             )
+
+
+def _is_missing_route(response: httpx.Response) -> bool:
+    """Tell a 404 for an unknown route apart from a 404 for an unknown record.
+
+    NestJS answers a route it does not have with ``Cannot <METHOD> <path>``;
+    a handler that cannot find a record says so in its own words ("Page not
+    found"). Older servers and Community-only builds lack some routes, and
+    "check the ID" is the wrong advice for those.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    message = body.get("message") if isinstance(body, dict) else None
+    return isinstance(message, str) and message.startswith("Cannot ")

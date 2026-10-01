@@ -267,7 +267,10 @@ docmost-cli search <query>                        # Full-text search
 ### 4.7 `docmost-cli attachment`
 
 ```
-docmost-cli attachment search <query>             # Search attachments
+docmost-cli attachment list <page-id>             # Every file attached to a page (v0.96+)
+  --query <text>                              # Filter by filename
+  --unused                                    # Only files the content no longer references
+docmost-cli attachment search <query>             # Search attachments (Enterprise)
   --space <space-slug>
 docmost-cli attachment upload <page-id>           # Upload a file to a page
   --file <path>
@@ -480,8 +483,13 @@ POST /search              → {query, spaceId?, type?, limit?, cursor?}
 
 **Attachments:**
 ```
-POST /attachments/search  → {query, spaceId?, limit?, cursor?}
-GET  /attachments/...     → file download
+POST /pages/attachments   → {pageId, query?, limit?, cursor?} (v0.96+, both editions;
+                            includes files the content no longer embeds)
+POST /search-attachments  → {query, spaceId?, limit?} (Enterprise, needs attachment
+                            indexing; not paginated)
+GET  /files/{id}/{name}   → file download
+                            (no endpoint deletes a page attachment; they are
+                            removed only when the page is permanently deleted)
 POST /files/upload        → multipart {file, pageId} (undocumented; the endpoint
                             the web editor uses for inline images/attachments)
 ```
@@ -809,7 +817,7 @@ def print_error(message: str, exit_code: int = 1) -> NoReturn:
 - [x] `docmost-cli page duplicate` / `page copy`
 - [x] `docmost-cli page children` (with `--json`) / `page history` (with `--json`)
 - [x] `docmost-cli page export` / `page import`
-- [x] `docmost-cli attachment search` / `attachment upload`
+- [x] `docmost-cli attachment search` / `attachment upload` / `attachment list`
 - [x] `docmost-cli workspace` / `docmost-cli user`
 - [x] Tree view (`--tree`) for page listing
 - [x] Pagination auto-follow for full listings
@@ -1006,6 +1014,18 @@ These items need investigation during implementation. Update this section as ans
       working if the endpoint is ever brought under the standard interceptor.
       That costs nothing and the endpoint is undocumented, so its shape is not
       contractual.
+
+      *Share links*: the public share view finds attachments by the
+      image node's `attachmentId` attribute, not its `src`, and only then
+      rewrites the URL to the signed `/api/files/public/{id}/{fileName}?jwt=…`
+      form (`ShareService.prepareContentForShare` → `getAttachmentIds`).
+      Markdown `![alt](src)` cannot carry that attribute, and the server's own
+      Markdown export drops it, so `convert/attachment_images.py` rewrites each
+      `/api/files/<uuid>/…` image to `<img … data-attachment-id="<uuid>">` on
+      every Markdown write (`/pages/update`, `/pages/import`). The server's
+      Markdown parser passes inline HTML through, and the image node reads
+      `attachmentId` from `data-attachment-id`. The public file endpoint also
+      requires the attachment's `pageId` to match the shared page.
 - [x] **Space slug vs ID**: Some endpoints accept slug, others require ID.
       *Resolved*: `resolve_space_id()` helper in `api/spaces.py` calls
       `POST /spaces/info` with `{spaceSlug: slug}` and returns the ID.

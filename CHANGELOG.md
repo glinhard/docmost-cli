@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`attachment list <page-id>`** — list every file attached to a page, through
+  `POST /pages/attachments` (Docmost v0.96+). That includes uploads the page no
+  longer shows: each upload creates a new attachment, and it stays on the page
+  after the content stops embedding it. `--unused` keeps only those, by
+  checking each ID against the page's content; `--query` filters by filename.
+  Docmost has no endpoint to delete a single attachment, so the CLI cannot
+  remove them; they go when the page is permanently deleted.
+
+### Fixed
+
+- **Images uploaded with the CLI were broken on public share links.** Docmost's
+  share view signs an image only when its node carries an `attachmentId`, and
+  finds it by that attribute, not by the URL. The web editor sets it on upload;
+  Markdown image syntax cannot, so an image written as
+  `![alt](/api/files/<id>/<name>)` kept its private, login-only URL on the share
+  page. Every Markdown write (`page create`, `page update`, `page import`,
+  `sync push`) now sends such images as `<img … data-attachment-id="<id>">`,
+  which stores the same node the editor creates. Images in code blocks and
+  images hosted elsewhere are left alone. Existing pages are fixed by pushing
+  their content again.
+- **`attachment search` always failed with "Resource not found".** It called
+  `/attachments/search`, a route Docmost has never had. It now calls
+  `/search-attachments`, which exists only on Enterprise with attachment
+  indexing; on Community the error says so and points at `attachment list`.
+- **A 404 for a route the server lacks said "Check the ID or slug."** The CLI
+  now tells NestJS's `Cannot POST …` apart from a missing record and names the
+  endpoint, with a version or edition hint where one is known.
+
 ## 0.7.0 (2026-07-28)
 
 ### Added

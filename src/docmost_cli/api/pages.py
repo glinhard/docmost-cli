@@ -1,11 +1,13 @@
 """Page API methods."""
 
+import contextlib
 import random
 from typing import Any
 
 from docmost_cli.api.client import DocmostClient
 from docmost_cli.api.pagination import build_body, extract_id, paginate_all, unwrap_data
 from docmost_cli.api.position import PositionError, generate_key_between
+from docmost_cli.convert.attachment_images import link_attachment_images
 from docmost_cli.output.formatter import print_error, print_warning
 
 __all__ = [
@@ -96,7 +98,7 @@ def create_page_via_import(
     elif not md_content:
         md_content = f"# {title}\n"
 
-    file_bytes = md_content.encode("utf-8")
+    file_bytes = link_attachment_images(md_content).encode("utf-8")
     files = {"file": (f"{title}.md", file_bytes, "text/markdown")}
     data = build_body({"spaceId": space_id}, parentPageId=parent_page_id)
 
@@ -141,6 +143,8 @@ CONTENT_UNSUPPORTED_MESSAGE = (
 
 def _content_body(page_id: str, content: str, fmt: str, operation: str) -> dict[str, Any]:
     """Build the /pages/update request body for a content update."""
+    if fmt == "markdown":
+        content = link_attachment_images(content)
     return {
         "pageId": page_id,
         "content": content,
@@ -686,7 +690,12 @@ def import_page(
     Returns:
         Raw API response dict (should contain new page ID).
     """
-    mime = "text/html" if file_name.lower().endswith((".html", ".htm")) else "text/markdown"
+    is_html = file_name.lower().endswith((".html", ".htm"))
+    mime = "text/html" if is_html else "text/markdown"
+    if not is_html:
+        # Not UTF-8 text: send it untouched and let the server judge.
+        with contextlib.suppress(UnicodeDecodeError):
+            file_bytes = link_attachment_images(file_bytes.decode("utf-8")).encode("utf-8")
     files = {"file": (file_name, file_bytes, mime)}
     data = build_body({"spaceId": space_id}, parentPageId=parent_page_id)
     return client.post_multipart("/pages/import", data=data, files=files)

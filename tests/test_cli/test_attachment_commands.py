@@ -1,5 +1,7 @@
 """Tests for attachment CLI commands."""
 
+import json
+
 from typer.testing import CliRunner
 
 from docmost_cli.cli.main import app
@@ -7,10 +9,59 @@ from docmost_cli.cli.main import app
 runner = CliRunner()
 
 
+class TestAttachmentList:
+    LIST_URL = "https://docs.example.com/api/pages/attachments"
+    ITEMS = [
+        {"id": "att-old", "fileName": "shot.png", "fileSize": 10, "createdAt": "2026-09-25"},
+        {"id": "att-new", "fileName": "shot.png", "fileSize": 12, "createdAt": "2026-10-01"},
+    ]
+
+    def _invoke(self, tmp_config, *args):
+        return runner.invoke(
+            app, ["--config", str(tmp_config), "attachment", "list", "page-1", *args]
+        )
+
+    def test_lists_every_attachment(self, tmp_config, httpx_mock) -> None:
+        httpx_mock.add_response(url=self.LIST_URL, json={"data": {"items": self.ITEMS}})
+        result = self._invoke(tmp_config, "--json")
+        assert result.exit_code == 0
+        assert [item["id"] for item in json.loads(result.stdout)] == ["att-old", "att-new"]
+
+    def test_unused_drops_what_the_page_embeds(self, tmp_config, httpx_mock) -> None:
+        httpx_mock.add_response(url=self.LIST_URL, json={"data": {"items": self.ITEMS}})
+        # Community: the body comes from /pages/info; there is no /pages/content.
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/info",
+            json={
+                "data": {
+                    "id": "page-1",
+                    "content": {
+                        "type": "doc",
+                        "content": [{"type": "image", "attrs": {"attachmentId": "att-new"}}],
+                    },
+                }
+            },
+        )
+        result = self._invoke(tmp_config, "--unused", "--json")
+        assert result.exit_code == 0
+        assert [item["id"] for item in json.loads(result.stdout)] == ["att-old"]
+        assert json.loads(httpx_mock.get_requests()[1].read())["includeContent"] is True
+
+    def test_unused_on_a_page_never_written(self, tmp_config, httpx_mock) -> None:
+        httpx_mock.add_response(url=self.LIST_URL, json={"data": {"items": self.ITEMS}})
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/info",
+            json={"data": {"id": "page-1", "content": None}},
+        )
+        result = self._invoke(tmp_config, "--unused", "--json")
+        assert result.exit_code == 0
+        assert [item["id"] for item in json.loads(result.stdout)] == ["att-old", "att-new"]
+
+
 class TestAttachmentSearch:
     def test_search_json(self, tmp_config, httpx_mock) -> None:
         httpx_mock.add_response(
-            url="https://docs.example.com/api/attachments/search",
+            url="https://docs.example.com/api/search-attachments",
             json={
                 "data": {
                     "items": [
@@ -36,7 +87,7 @@ class TestAttachmentSearch:
             json={"data": {"items": [{"id": "space-uuid", "slug": "eng", "name": "Eng"}]}},
         )
         httpx_mock.add_response(
-            url="https://docs.example.com/api/attachments/search",
+            url="https://docs.example.com/api/search-attachments",
             json={
                 "data": {
                     "items": [
