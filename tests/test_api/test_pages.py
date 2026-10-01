@@ -66,6 +66,22 @@ class TestCreatePageViaImport:
         request = httpx_mock.get_requests()[0]
         assert request.method == "POST"
 
+    def test_hosted_images_get_attachment_id(self, httpx_mock, api_key_settings) -> None:
+        attachment_id = "01a0f7be-78a3-71d8-8f23-6a0024546f12"
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/import",
+            json={"id": "new-page"},
+        )
+        with DocmostClient(api_key_settings) as client:
+            create_page_via_import(
+                client,
+                space_id="space-1",
+                title="New Page",
+                content=f"![](/api/files/{attachment_id}/a.png)",
+            )
+        sent = httpx_mock.get_requests()[0].read().decode()
+        assert f'data-attachment-id="{attachment_id}"' in sent
+
     def test_empty_content(self, httpx_mock, api_key_settings) -> None:
         httpx_mock.add_response(
             url="https://docs.example.com/api/pages/import",
@@ -123,6 +139,29 @@ class TestUpdatePageContent:
             "format": "markdown",
             "operation": "replace",
         }
+
+    def test_hosted_images_get_attachment_id(self, httpx_mock, api_key_settings) -> None:
+        """Share links only sign images that carry attachmentId, so send it."""
+        attachment_id = "01a0f7be-78a3-71d8-8f23-6a0024546f12"
+        content = f"![shot](/api/files/{attachment_id}/shot.png)"
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "page-1", "content": content}},
+        )
+        with DocmostClient(api_key_settings) as client:
+            update_page_content(client, page_id="page-1", content=content)
+        body = json.loads(httpx_mock.get_requests()[0].read())
+        assert f'data-attachment-id="{attachment_id}"' in body["content"]
+
+    def test_html_content_is_sent_verbatim(self, httpx_mock, api_key_settings) -> None:
+        content = "<p>![x](/api/files/01a0f7be-78a3-71d8-8f23-6a0024546f12/x.png)</p>"
+        httpx_mock.add_response(
+            url="https://docs.example.com/api/pages/update",
+            json={"data": {"id": "page-1", "content": content}},
+        )
+        with DocmostClient(api_key_settings) as client:
+            update_page_content(client, page_id="page-1", content=content, fmt="html")
+        assert json.loads(httpx_mock.get_requests()[0].read())["content"] == content
 
     @pytest.mark.parametrize("operation", ["append", "prepend"])
     def test_operation_is_sent(self, httpx_mock, api_key_settings, operation) -> None:

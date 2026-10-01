@@ -1006,6 +1006,18 @@ These items need investigation during implementation. Update this section as ans
       working if the endpoint is ever brought under the standard interceptor.
       That costs nothing and the endpoint is undocumented, so its shape is not
       contractual.
+
+      *Share links*: the public share view finds attachments by the
+      image node's `attachmentId` attribute, not its `src`, and only then
+      rewrites the URL to the signed `/api/files/public/{id}/{fileName}?jwt=…`
+      form (`ShareService.prepareContentForShare` → `getAttachmentIds`).
+      Markdown `![alt](src)` cannot carry that attribute, and the server's own
+      Markdown export drops it, so `convert/attachment_images.py` rewrites each
+      `/api/files/<uuid>/…` image to `<img … data-attachment-id="<uuid>">` on
+      every Markdown write (`/pages/update`, `/pages/import`). The server's
+      Markdown parser passes inline HTML through, and the image node reads
+      `attachmentId` from `data-attachment-id`. The public file endpoint also
+      requires the attachment's `pageId` to match the shared page.
 - [x] **Space slug vs ID**: Some endpoints accept slug, others require ID.
       *Resolved*: `resolve_space_id()` helper in `api/spaces.py` calls
       `POST /spaces/info` with `{spaceSlug: slug}` and returns the ID.

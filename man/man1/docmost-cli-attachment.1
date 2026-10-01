@@ -81,6 +81,24 @@ page\-embeddable URL (\fI/api/files/{id}/{fileName}\fR) to stderr, so
 captures the ID alone.
 Embed the file in a page's Markdown with
 .IR "![alt text](/api/files/<id>/<filename>)" .
+Upload the file to the same page that embeds it: a share link only serves an
+attachment to the page it belongs to.
+.PP
+When Markdown is sent by
+.BR "page create" ,
+.BR "page update" ,
+.B page import
+or
+.BR "sync push" ,
+each image whose source is
+.I /api/files/<uuid>/...
+is sent as an
+.B <img>
+tag carrying
+.BR data\-attachment\-id .
+Docmost signs an image for public share links by that ID, and Markdown image
+syntax cannot carry it; without it the image appears broken to anonymous
+readers.
 .PP
 This uses
 .IR /files/upload ,

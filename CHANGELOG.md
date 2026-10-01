@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Images uploaded with the CLI were broken on public share links.** Docmost's
+  share view signs an image only when its node carries an `attachmentId`, and
+  finds it by that attribute, not by the URL. The web editor sets it on upload;
+  Markdown image syntax cannot, so an image written as
+  `![alt](/api/files/<id>/<name>)` kept its private, login-only URL on the share
+  page. Every Markdown write (`page create`, `page update`, `page import`,
+  `sync push`) now sends such images as `<img … data-attachment-id="<id>">`,
+  which stores the same node the editor creates. Images in code blocks and
+  images hosted elsewhere are left alone. Existing pages are fixed by pushing
+  their content again.
+
 ## 0.7.0 (2026-07-28)
 
 ### Added
